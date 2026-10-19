@@ -5,6 +5,36 @@ A lightweight, cross-device synchronized note and task management system with a 
 
 ---
 
+## Status & Revisions (v2 — 2026-10-18)
+
+**Everything in this plan is implemented** — Phase 1 MVP and Phases 2–5 (all 26 block types,
+real-time sync, conflict UI, search, templates, tags, export/import, sharing, comments, activity,
+version history, media, PWA). See `README.md` for running it and `API_SPEC.md` /
+`DATABASE_SCHEMA.md` (sections "v2") for the final contracts.
+
+Building it surfaced problems in the original design. These are the changes made and why:
+
+| # | Original plan | Problem | Revision |
+|---|---------------|---------|----------|
+| 1 | Push conflicts when `page_version` ≠ server version | Two devices editing *different* blocks on one page always conflicted | **Per-entity conflict detection**: an op conflicts only if *another device* changed the *same* block/page since the client's base version. Edits to different blocks merge cleanly. |
+| 2 | `GET /sync/pull?since=<ms timestamp>` | Ops landing in the same millisecond as the last pull were skipped forever | **Monotonic cursor** (`sync_operations.id`): `pull?cursor=N`. `since` still accepted for compatibility. |
+| 3 | `sync_operations.page_id` FK with `ON DELETE CASCADE` | A permanent delete erased its own log entry, so other devices never learned the page was gone | FK dropped (migration `0002`); the log outlives pages. |
+| 4 | `toggle.content.children` id list + `page.component_ids` | Two sources of truth for order/nesting; no way to express `columns` | Components have **`parent_id` + `slot`**. `page.component_ids` is the one flat order; siblings render in that order. Works for toggles (1 slot) and columns (2–4 slots). |
+| 5 | Verify/reset tokens (no storage defined) | Nowhere to persist or invalidate them | **Stateless signed tokens**. Reset tokens embed a fingerprint of the current password hash, so they become invalid the moment the password changes (single-use). |
+| 6 | Rate limit 1000 req/hour | One person typing with autosave exceeds it within minutes | **Per-minute windows** (600 authenticated / 60 anonymous) and the client **batches** ops (one push per ~0.8 s of activity, content edits to the same block coalesced). |
+| 7 | `passlib[bcrypt]` | Broken with bcrypt ≥ 4.1; bcrypt silently truncates at 72 bytes | `bcrypt` used directly with SHA-256 pre-hashing. Refresh tokens use keyed SHA-256 (they are 384-bit random; bcrypt adds cost, not security). |
+| 8 | 403 for "page exists but isn't yours" | Lets anyone probe which page ids exist | **404** for inaccessible pages; 403 only when you can see a page but lack the role (e.g. viewer editing). |
+| 9 | Server stores `<strong>/<em>` HTML | `contentEditable` emits `<b>/<i>/<div>` | Allowlist sanitizer normalises markup server-side (and DOMPurify client-side). |
+| 10 | `Cmd+K` = quick actions *and* add link | Same shortcut, two meanings | Inside a text block `Cmd+K` adds a link; elsewhere it opens quick actions. `Cmd+F` searches all pages. |
+| 11 | Undo = `Cmd+Z` | Would fight the browser's native text undo | Native undo inside text; block-level undo/redo (create, delete, move, convert) when focus isn't in an editable. |
+| 12 | Offline-first, but REST-only mutations | REST can't queue offline | Client writes go to IndexedDB + an **outbox** of idempotent ops pushed via `/sync/push`; REST remains for server-side actions (duplicate, templates, import, restore). Initial load uses one `GET /sync/bootstrap` instead of N+1 requests. |
+
+Other additions not in the original plan: WebSocket presence ("who's viewing"), automatic version
+snapshots (taken before the first edit after a 15-minute quiet period), backlinks, Markdown
+shortcuts while typing (`# `, `- `, `[] `, `**bold**`…), and a terminal-style UI.
+
+---
+
 ## Component System Design
 
 ### Research Summary

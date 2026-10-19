@@ -708,3 +708,91 @@ engine = create_engine(
 
 **Last Updated**: 2026-01-27
 **Version**: 1.0
+
+---
+
+## v2 — Implemented schema changes (migration `0002_nesting_sharing_history`)
+
+**Changed tables**
+
+- `pages`: `+ tags JSON NOT NULL DEFAULT '[]'`, `+ is_template BOOLEAN NOT NULL DEFAULT FALSE`;
+  indexes `ix_pages_updated_at`, `ix_pages_user_deleted`.
+- `components`: `+ parent_id VARCHAR(36) NULL` (container block), `+ slot INTEGER NOT NULL DEFAULT 0`
+  (column index); indexes on `type`, `updated_at`, `parent_id`. Nesting replaces
+  `toggle.content.children`. `pages.component_ids` stays the single flat order; siblings render in
+  that order.
+- `sync_operations`: **FK on `page_id` removed** so the log survives permanent page deletion;
+  `operation_id` widened to 64; `+ audience_user_id` (extra recipient, e.g. the user a page was
+  unshared from); indexes on `(entity_type, entity_id)`, `audience_user_id`, `user_id`, `page_id`.
+  `id` is the sync cursor. `operation_type` stores the change type (`component_updated`, …).
+- `users`: index `ix_users_created_at`.
+
+**New tables**
+
+```sql
+CREATE TABLE page_shares (
+    id VARCHAR(36) PRIMARY KEY,
+    page_id VARCHAR(36) NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+    user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role VARCHAR(20) NOT NULL,              -- viewer | editor
+    created_at BIGINT NOT NULL,
+    UNIQUE (page_id, user_id)
+);
+
+CREATE TABLE page_snapshots (               -- version history
+    id VARCHAR(36) PRIMARY KEY,
+    page_id VARCHAR(36) NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+    version INTEGER NOT NULL,
+    created_at BIGINT NOT NULL,
+    created_by VARCHAR(36),
+    label VARCHAR(200),
+    is_auto BOOLEAN NOT NULL DEFAULT FALSE, -- auto snapshots are pruned to the latest 50
+    title VARCHAR(200) NOT NULL,
+    data JSON NOT NULL                      -- {page: {...}, components: [...]}
+);
+
+CREATE TABLE comments (
+    id VARCHAR(36) PRIMARY KEY,
+    page_id VARCHAR(36) NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+    component_id VARCHAR(36),               -- NULL = page-level comment
+    user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    body TEXT NOT NULL,
+    resolved BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at BIGINT NOT NULL,
+    updated_at BIGINT NOT NULL
+);
+
+CREATE TABLE media_assets (
+    id VARCHAR(36) PRIMARY KEY,
+    user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    mime_type VARCHAR(100) NOT NULL,
+    file_size BIGINT NOT NULL,
+    checksum VARCHAR(100),                  -- "sha256:<hex>", verified on upload
+    filename VARCHAR(255),
+    status VARCHAR(20) NOT NULL,            -- pending | ready
+    created_at BIGINT NOT NULL,
+    upload_expires_at BIGINT NOT NULL
+);
+```
+
+Files are stored under `MEDIA_ROOT/<user_id>/<asset_id>`.
+
+**Notes**
+
+- Refresh tokens are stored as keyed SHA-256 (HMAC) hashes, not bcrypt (see plan revision 7).
+- Email verification / password reset use stateless signed tokens; no table is needed.
+- SQLite connections enable `PRAGMA foreign_keys=ON` so cascades work in development.
+- JSON is written with `ensure_ascii=False` so non-ASCII text in blocks is searchable.
+
+## v2.1 — migration `0003_journal_and_settings`
+
+- `pages.journal_date VARCHAR(10) NULL` with unique index `uq_pages_user_journal_date
+  (user_id, journal_date)`; NULLs don't collide, so ordinary pages are unaffected.
+- `users.settings JSON NOT NULL DEFAULT '{}'`: per-user preferences (`journal_template_id`,
+  `journal_salt`).
+
+## v2.2 — migration `0004_page_template_origin`
+
+- `pages.template_id VARCHAR(64) NULL`: the template a page was made from. The migration
+  backfills pages whose title exactly matches a built-in template's title (how such pages were
+  named before this column existed).

@@ -1,0 +1,21 @@
+/* Drag-and-drop reordering. */
+
+.drop-indicator {
+    position: absolute;
+    z-index: 90;
+    height: 2px;
+    background: var(--amber);
+    box-shadow: 0 0 0 1px var(--amber-glow), 0 0 12px var(--amber-glow);
+    pointer-events: none;
+}
+.drop-indicator::before {
+    content: "";
+    position: absolute;
+    left: -4px;
+    top: -3px;
+    width: 8px;
+    height: 8px;
+    background: var(--amber);
+}
+.block.is-dragging { opacity: .35; }
+.block__handle:active { cursor: grabbing; }

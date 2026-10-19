@@ -1239,3 +1239,144 @@ Use the interactive API documentation:
 
 **Last Updated**: 2026-01-27
 **Version**: 1.0
+
+---
+
+## v2 — Implemented API (supersedes conflicting details above)
+
+Interactive docs: `http://localhost:8000/docs`. Every error uses the envelope in
+[Error Responses](#error-responses). Pages you can't access return **404** (not 403).
+
+### Auth additions
+
+| Method | Path | Notes |
+|--------|------|-------|
+| `GET` | `/api/auth/me` | Current user |
+| `POST` | `/api/auth/change-password` | `{current_password, new_password}`; signs out other devices |
+| `POST` | `/api/auth/register`, `/login` | Accept optional `device_id` (reuse this browser's session) and `device_name` |
+
+Access tokens carry `sid` (session) and `did` (device). Logging out or revoking a session
+invalidates its access token immediately.
+
+### Pages
+
+| Method | Path | Notes |
+|--------|------|-------|
+| `GET` | `/api/pages` | Extra filters: `scope=all|owned|shared`, `tag`, `is_template` |
+| `POST` | `/api/pages` | Optional client `id` (UUID), `tags`, `is_template` |
+| `POST` | `/api/pages/{id}/duplicate` | `{title?, as_template?}` |
+| `GET` | `/api/templates` | Built-in + your templates |
+| `POST` | `/api/pages/from-template` | `{template_id, title?}` |
+| `POST` | `/api/pages/import` | `{format: markdown|json, content, title?}` |
+| `GET` | `/api/pages/{id}/export?format=markdown|json` | Markdown download or nosk JSON |
+| `GET` | `/api/tags` | `[{tag, count}]` across accessible pages |
+| `GET/POST` | `/api/pages/{id}/shares` | `POST {email, role: viewer|editor}` (owner only) |
+| `DELETE` | `/api/pages/{id}/shares/{user_id}` | Owner removes anyone; a collaborator can remove themselves |
+| `GET/POST` | `/api/pages/{id}/versions` | List / save a named snapshot |
+| `GET` | `/api/pages/{id}/versions/{vid}` | Snapshot contents |
+| `POST` | `/api/pages/{id}/versions/{vid}/restore` | Replaces page content (current state is snapshotted first) |
+| `GET` | `/api/pages/{id}/activity?limit&before` | Change history with actor emails |
+| `GET` | `/api/pages/{id}/backlinks` | Pages with `page-link` blocks pointing here |
+| `GET/POST` | `/api/pages/{id}/comments` | `POST {body, component_id?}` — viewers may comment |
+| `PUT/DELETE` | `/api/comments/{id}` | Author edits; editors resolve; author/owner delete |
+
+Page objects also include `tags`, `is_template`, `role` (`owner|editor|viewer`) and
+`owner_email` (for shared pages).
+
+### Components
+
+Components have `parent_id` (container block or `null`) and `slot` (column index; 0 for toggles).
+`POST /api/pages/{id}/components` accepts `id?`, `parent_id`, `slot`, `after_id` (or `order`).
+
+| Method | Path | Notes |
+|--------|------|-------|
+| `GET` | `/api/components/{id}` | |
+| `POST` | `/api/components/{id}/move` | `{parent_id, slot, after_id}`; moves the whole subtree |
+| `DELETE` | `/api/components/{id}` | Deletes nested children too; response lists `deleted_ids` |
+
+**26 component types**: `text-block, heading, markdown, checklist, bullet-list, numbered-list,
+toggle, callout, divider, quote, code, table, image, bookmark, embed, file, properties, date,
+tags, columns, template, math, comment, page-link, canvas, database`. Content schemas live in
+`backend/app/schemas/component_content.py` (unknown fields are rejected; rich text is sanitized).
+
+**Conversions** work between any of: `text-block, heading, quote, callout, toggle, code,
+markdown, checklist, bullet-list, numbered-list`.
+
+### Sync
+
+| Method | Path | Notes |
+|--------|------|-------|
+| `GET` | `/api/sync/bootstrap` | All accessible pages + components + `cursor` for a fresh device |
+| `GET` | `/api/sync/pull?cursor=N&limit=500` | Changes after `cursor` (`since=<ms>` still accepted) → `{changes, cursor, last_sync, has_more}` |
+| `POST` | `/api/sync/push` | Idempotent ops (see below) |
+| `GET` | `/api/sync/status?cursor=N` | `pending_changes` from other devices |
+| `WS` | `/api/sync/live` | Push notifications + presence |
+
+**Push operation types**: `create_page, update_page, delete_page {permanent?}, restore_page,
+create_component, update_component, move_component, delete_component, reorder_components,
+convert_component {to_type, content?}`. Each op: `{operation_id, type, page_id, component_id?,
+page_version, data, force?}`.
+
+`page_version` is the last server version the client saw **for that entity**. An op conflicts
+only if another device changed the same entity since then (`reason: version_mismatch`), or the
+entity was deleted (`entity_deleted`); both have `resolution: manual` and include
+`server_data`. Re-send with `force: true` to keep yours. Invalid or unauthorised ops are
+`resolution: rejected` (`invalid` / `forbidden`) and don't block the rest of the batch.
+
+**Change types** in pulls: `page_created, page_updated, page_deleted {permanent},
+page_restored, page_replaced {page, components}, page_shared, page_unshared,
+component_created, component_updated, component_moved, component_deleted,
+components_reordered, comment_created, comment_updated, comment_deleted`. Each carries the full
+entity state after the change (`data.component`, page fields, `component_ids`), plus `seq`,
+`device_id` and `user_id`.
+
+**WebSocket protocol**: first message `{"type":"auth","token":"<access token>"}` (closes with
+4401 if invalid). Server sends `{"type":"ready"}`, `{"type":"changes"}` (pull now) and
+`{"type":"presence","page_id","viewers":[{user_id,email,device_id}]}`. Client sends
+`{"type":"presence","page_id"}` and `{"type":"ping"}`. Client messages over 20/s are dropped.
+
+### Media & link previews
+
+| Method | Path | Notes |
+|--------|------|-------|
+| `POST` | `/api/media/upload-url` | `{mime_type, file_size, checksum?: "sha256:<hex>", filename?}` → `{upload_url, asset_id, expires_at}` |
+| `PUT` | `upload_url` | Raw bytes; single-use, 5-minute token, size/checksum verified |
+| `GET` | `/api/media/{asset_id}` | Owner, or anyone who can see a page using the asset. Non-image types download as attachments. |
+| `POST` | `/api/unfurl` | `{url}` → Open Graph `{title, description, image_url, site_name}`; private/reserved IPs are refused |
+
+### Search
+
+`GET /api/search?q=&limit=` → `{results: [{page_id, title, icon, component_id, snippet, match}]}`
+across titles and block text of all accessible pages.
+
+### Rate limiting
+
+Per-minute windows: 600 requests/min per user, 60/min per IP for anonymous requests
+(`RATE_LIMIT_*` settings). Headers: `X-RateLimit-Limit`, `X-RateLimit-Remaining`,
+`X-RateLimit-Reset`, and `Retry-After` on 429.
+
+### Daily journal & settings (v2.1)
+
+- Pages accept and return `journal_date` (`YYYY-MM-DD`, user's local calendar; set at creation,
+  never changed). At most one journal page per user per day. Creating a second page for a day that
+  already has one keeps the new page as a normal page (its `journal_date` is `null`) instead of
+  rejecting it, so nothing written offline is lost.
+- Clients derive a day's page id from the user, a per-user secret salt and the date, and the
+  template blocks' ids from the page id. When two devices create the same day, the second
+  `create_page` / `create_component` is treated as already applied. Concurrent creates that race
+  on a unique constraint are retried once server-side.
+- `GET /api/auth/settings` → `{journal_template_id, journal_salt}` (the salt is generated on first
+  read and only ever returned to its owner). `PUT /api/auth/settings {journal_template_id}` accepts
+  a built-in template id, one of your own templates, or `null` for blank days.
+- `GET /api/templates/{id}` → `{id, title, icon, builtin, blocks}`: a template's blocks, so
+  clients can build journal pages offline.
+- `POST /api/sync/push` also returns `op_versions: {operation_id: page_version}`, the version
+  each applied op produced. Clients use it to ignore older snapshots of entities they changed.
+- Pages also carry `template_id`: the template they were made from (a built-in id such as
+  `builtin-daily-journal`, or a template page's id). Set by `POST /api/pages/from-template`,
+  journal creation (`create_page` accepts it) and kept by duplicates; `null` for pages started
+  from scratch. Pages made from one of your templates take the template's title. Clients group
+  pages under their template in the navigation.
+- `GET /api/sync/bootstrap` and `GET /api/sync/pull` return `data_epoch`. It changes when a
+  migration rewrites existing rows (which produces no sync ops); a device whose stored epoch
+  differs re-downloads all pages and blocks, keeping anything it hasn't pushed yet.

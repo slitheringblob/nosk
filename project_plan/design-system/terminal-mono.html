@@ -1,0 +1,1217 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Terminal Mono</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap">
+<style>
+/* Layout: sticky top bar, fixed table of contents on wide screens, one reading column of
+   numbered sections; the page is itself built with the system it documents. */
+:root {
+    --bg: #06070b;
+    --bg-elev: #0b0c12;
+    --panel: #0d0e16;
+    --surface: #c0caf507;
+    --surface-2: #c0caf50e;
+    --surface-3: #c0caf516;
+    --bdr: #c0caf517;
+    --bdr-hi: #c0caf533;
+    --txt: #e4e8f7;
+    --txt-2: #9ba3c4;
+    --txt-3: #747b9e;
+    --txt-4: #3a4060;
+    --amber: #fbbf24;
+    --amber-fill: #fcd34d;
+    --amber-fill-hover: #fef08a;
+    --amber-fill-active: #fbbf24;
+    --on-amber: #0b0a06;
+    --amber-wash: #fbbf2412;
+    --amber-line: #fbbf2452;
+    --amber-glow: #fbbf2459;
+    --blue: #7aa2f7;
+    --cyan: #7dcfff;
+    --violet: #bb9af7;
+    --green: #9ece6a;
+    --rose: #f7768e;
+    --orange: #ff9e64;
+    --grid: #c0caf509;
+    --nav-bg: #06070bd6;
+    --scrim: #000000a6;
+    --glow-opacity: .7;
+    --shadow-float: 0 60px 140px -60px #000000f2;
+    /* Code blocks stay dark in both themes, so their colours are fixed. */
+    --code-surface: #0a0c14;
+    --code-surface-header: #0f111c;
+    --code-bdr: #c0caf51f;
+    --code-txt: #c0caf5;
+    --code-dim: #9ba3c4;
+    --s-com: #565f89;
+    --s-key: #bb9af7;
+    --s-str: #9ece6a;
+    --s-num: #ff9e64;
+    --s-fn: #7aa2f7;
+    --s-tag: #7dcfff;
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    --toc-w: 232px;
+    color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+        --bg: #f4f5f8; --bg-elev: #ffffff; --panel: #ffffff;
+        --surface: #0b0d1406; --surface-2: #0b0d140d; --surface-3: #0b0d1414;
+        --bdr: #0b0d141a; --bdr-hi: #0b0d1438;
+        --txt: #0b0d14; --txt-2: #454c5e; --txt-3: #686f82; --txt-4: #b3b9c6;
+        --amber: #b45309; --amber-wash: #b453090f; --amber-line: #b4530959; --amber-glow: #b4530938;
+        --blue: #0969da; --cyan: #0550ae; --violet: #8250df; --green: #116329; --rose: #cf222e; --orange: #953800;
+        --grid: #0b0d140b; --nav-bg: #f4f5f8e0; --scrim: #0b0d1440; --glow-opacity: .5;
+        --shadow-float: 0 50px 100px -50px #0b0d1459;
+        color-scheme: light;
+    }
+}
+:root[data-theme="light"] {
+    --bg: #f4f5f8; --bg-elev: #ffffff; --panel: #ffffff;
+    --surface: #0b0d1406; --surface-2: #0b0d140d; --surface-3: #0b0d1414;
+    --bdr: #0b0d141a; --bdr-hi: #0b0d1438;
+    --txt: #0b0d14; --txt-2: #454c5e; --txt-3: #686f82; --txt-4: #b3b9c6;
+    --amber: #b45309; --amber-wash: #b453090f; --amber-line: #b4530959; --amber-glow: #b4530938;
+    --blue: #0969da; --cyan: #0550ae; --violet: #8250df; --green: #116329; --rose: #cf222e; --orange: #953800;
+    --grid: #0b0d140b; --nav-bg: #f4f5f8e0; --scrim: #0b0d1440; --glow-opacity: .5;
+    --shadow-float: 0 50px 100px -50px #0b0d1459;
+    color-scheme: light;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 72px; }
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--txt);
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.6;
+    font-feature-settings: "zero" 1;
+    font-variant-ligatures: none;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: clip;
+}
+::selection { background: var(--amber-fill); color: #08080b; }
+:focus-visible { outline: 1px solid var(--amber); outline-offset: 2px; }
+button, input, select, textarea { font: inherit; color: inherit; }
+a { color: var(--blue); text-underline-offset: 3px; text-decoration-color: var(--bdr-hi); }
+a:hover { text-decoration-color: currentColor; }
+code { color: var(--orange); background: var(--surface-2); border: 1px solid var(--bdr); padding: 0 4px; font-size: .92em; }
+h1, h2, h3 { text-wrap: balance; }
+
+/* Atmosphere ------------------------------------------------------------------------------ */
+.atmos { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+.atmos-glow {
+    position: absolute; inset: -30% -10% auto; height: 90vh; filter: blur(20px); opacity: var(--glow-opacity);
+    background: radial-gradient(40% 40% at 22% 30%, #fbbf2417, transparent 70%), radial-gradient(40% 40% at 80% 20%, #7aa2f71a, transparent 72%);
+}
+.atmos-grid {
+    position: absolute; inset: 0;
+    background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 32px 32px;
+    mask-image: radial-gradient(120% 70% at 50% 0, #000 25%, transparent 80%);
+}
+.cursor { display: inline-block; width: .5em; height: .82em; margin-left: .1em; background: var(--amber); animation: blink 1.05s step-end infinite; vertical-align: -.04em; }
+@keyframes blink { 50% { opacity: 0; } }
+
+/* Shared primitives (the system's own components) ------------------------------------------- */
+.eyebrow { font-size: 10.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--txt-3); }
+.accent { color: var(--amber); }
+.muted { color: var(--txt-3); font-size: 11.5px; }
+.btn {
+    height: 34px; padding: 0 14px; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    border: 1px solid transparent; border-radius: 0; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;
+    transition: background-color .15s, border-color .15s, color .15s; text-decoration: none;
+}
+.btn-sm { height: 28px; padding: 0 10px; font-size: 11.5px; }
+.btn-primary { background: var(--amber-fill); color: var(--on-amber); }
+.btn-primary:hover { background: var(--amber-fill-hover); }
+.btn-primary:active { background: var(--amber-fill-active); }
+.btn-ghost { background: transparent; border-color: var(--bdr-hi); color: var(--txt); }
+.btn-ghost:hover { border-color: var(--amber-line); background: var(--amber-wash); color: var(--amber); }
+.btn-danger { background: transparent; border-color: color-mix(in srgb, var(--rose) 50%, transparent); color: var(--rose); }
+.btn-danger:hover { background: color-mix(in srgb, var(--rose) 12%, transparent); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.icon-btn { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; background: transparent; border: 1px solid transparent; color: var(--txt-2); cursor: pointer; padding: 0; font-size: 14px; }
+.icon-btn:hover { color: var(--txt); border-color: var(--bdr-hi); background: var(--surface-2); }
+.link-btn { background: none; border: 0; padding: 0; color: var(--txt-2); font-size: 11.5px; text-decoration: underline; text-decoration-color: var(--bdr-hi); text-underline-offset: 3px; cursor: pointer; }
+.link-btn:hover { color: var(--amber); }
+input, select, textarea { background: var(--surface); border: 1px solid var(--bdr-hi); border-radius: 0; padding: 7px 10px; font-size: 12.5px; min-width: 0; }
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--amber-line); background: var(--surface-2); }
+input::placeholder { color: var(--txt-3); }
+input[type="checkbox"], input[type="range"] { accent-color: var(--amber); }
+kbd {
+    display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 5px;
+    border: 1px solid var(--bdr-hi); border-bottom-width: 2px; background: var(--surface);
+    font-family: var(--mono); font-size: 10.5px; color: var(--txt-2); line-height: 1;
+}
+.badge { display: inline-flex; padding: 1px 6px; font-size: 9.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--amber); border: 1px solid var(--amber-line); background: var(--amber-wash); }
+.badge--neutral { color: var(--txt-3); border-color: var(--bdr); background: transparent; }
+
+/* Shell ------------------------------------------------------------------------------------- */
+.topbar {
+    position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20;
+    background: var(--nav-bg); border-bottom: 1px solid var(--bdr); backdrop-filter: blur(14px) saturate(140%);
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.topbar__inner { display: flex; align-items: center; gap: 12px; height: 48px; max-width: 1240px; margin: 0 auto; min-width: 0; }
+.brand { font-weight: 800; font-size: 15px; letter-spacing: -.04em; color: var(--txt); text-decoration: none; white-space: nowrap; }
+.topbar__spacer { flex: 1; }
+.segmented { display: inline-flex; border: 1px solid var(--bdr-hi); }
+.segmented button { background: none; border: 0; border-right: 1px solid var(--bdr-hi); padding: 0 10px; height: 26px; color: var(--txt-2); font-size: 11px; cursor: pointer; }
+.segmented button:last-child { border-right: 0; }
+.segmented button.is-active { background: var(--amber-fill); color: var(--on-amber); }
+
+.shell {
+    position: relative; z-index: 1; display: grid; grid-template-columns: var(--toc-w) minmax(0, 1fr); gap: 48px;
+    max-width: 1240px; margin: 0 auto;
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 0 80px;
+}
+.toc { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 64px); align-self: start; padding-top: 40px; display: grid; gap: 2px; }
+.toc a {
+    display: flex; gap: 10px; padding: 4px 8px; margin-left: -8px; color: var(--txt-2); text-decoration: none; font-size: 12px;
+    border-left: 2px solid transparent;
+}
+.toc a span { color: var(--txt-4); font-variant-numeric: tabular-nums; }
+.toc a:hover { color: var(--txt); background: var(--surface-2); }
+.toc a.is-active { color: var(--txt); background: var(--amber-wash); border-left-color: var(--amber); }
+.toc a.is-active span { color: var(--amber); }
+main { min-width: 0; }
+
+/* Hero --------------------------------------------------------------------------------------- */
+.hero { padding-block: 56px 40px; border-bottom: 1px solid var(--bdr); }
+.hero h1 { margin: 16px 0 18px; font-size: clamp(38px, 6vw, 76px); font-weight: 800; letter-spacing: -.06em; line-height: .94; }
+.hero h1 .hl { color: var(--amber); }
+.hero p { margin: 0; max-width: 62ch; color: var(--txt-2); font-size: 14px; line-height: 1.7; }
+.hero__meta { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 24px; }
+.hero__meta div { display: grid; gap: 2px; }
+.hero__meta strong { font-size: 12.5px; font-weight: 600; }
+.hero__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 28px; }
+
+/* Sections ------------------------------------------------------------------------------------ */
+.section { padding-block: 56px 8px; }
+.section__head { display: grid; gap: 6px; margin-bottom: 22px; }
+.section__head h2 { margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -.035em; line-height: 1.2; }
+.section__head p { margin: 0; max-width: 66ch; color: var(--txt-2); font-size: 13.5px; }
+.prose { max-width: 68ch; color: var(--txt-2); font-size: 13.5px; }
+.prose strong { color: var(--txt); }
+h3.sub { margin: 30px 0 12px; font-size: 14px; font-weight: 800; letter-spacing: -.02em; }
+
+.principles { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); border: 1px solid var(--bdr); }
+.principle { padding: 16px 18px; border-right: 1px solid var(--bdr); border-bottom: 1px solid var(--bdr); background: var(--surface); margin: 0 -1px -1px 0; }
+.principle h3 { margin: 6px 0 6px; font-size: 13px; font-weight: 700; }
+.principle p { margin: 0; color: var(--txt-2); font-size: 12.5px; }
+
+.table-wrap { overflow-x: auto; border: 1px solid var(--bdr); }
+table { border-collapse: collapse; width: 100%; font-size: 12px; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--bdr); vertical-align: middle; white-space: nowrap; }
+th { font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--txt-3); background: var(--surface-2); }
+tr:last-child td { border-bottom: 0; }
+td.wrap { white-space: normal; min-width: 220px; color: var(--txt-2); }
+.num { font-variant-numeric: tabular-nums; }
+.pass { color: var(--green); }
+.warn { color: var(--rose); }
+
+/* Swatches ------------------------------------------------------------------------------------ */
+.swatch-strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; margin-bottom: 18px; }
+.swatch { border: 1px solid var(--bdr); background: var(--surface); padding: 0; text-align: left; cursor: pointer; display: grid; }
+.swatch:hover { border-color: var(--amber-line); }
+.swatch__chip { height: 46px; border-bottom: 1px solid var(--bdr); background: var(--c); }
+.swatch__label { padding: 6px 8px; display: grid; gap: 1px; }
+.swatch__label b { font-size: 11px; font-weight: 600; }
+.swatch__label span { font-size: 10.5px; color: var(--txt-3); }
+.chip { display: inline-block; width: 26px; height: 16px; vertical-align: middle; margin-right: 8px; border: 1px solid var(--bdr-hi); background: linear-gradient(var(--c), var(--c)), var(--g); }
+.hex { cursor: pointer; background: none; border: 0; padding: 0; font-size: 12px; color: var(--txt); display: inline-flex; align-items: center; }
+.hex:hover { color: var(--amber); }
+
+/* Type specimens ------------------------------------------------------------------------------- */
+.specimens { display: grid; border: 1px solid var(--bdr); }
+.specimen { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 16px; align-items: baseline; padding: 14px 16px; border-bottom: 1px solid var(--bdr); }
+.specimen:last-child { border-bottom: 0; }
+.specimen__meta { display: grid; gap: 2px; }
+.specimen__meta span:last-child { font-size: 10.5px; color: var(--txt-3); }
+.specimen__sample { min-width: 0; overflow-wrap: anywhere; }
+
+/* Spacing ------------------------------------------------------------------------------------- */
+.ruler { display: grid; gap: 6px; }
+.ruler__row { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 12px; align-items: center; }
+.ruler__bar { height: 10px; background: var(--amber-wash); border: 1px solid var(--amber-line); }
+
+/* Demo cards ------------------------------------------------------------------------------------ */
+.demo-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.demo { border: 1px solid var(--bdr); background: var(--surface); display: flex; flex-direction: column; min-width: 0; }
+.demo__head { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--bdr); }
+.demo__body { padding: 16px 14px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; align-content: flex-start; min-width: 0; flex: 1; }
+.demo__body.stack { flex-direction: column; align-items: stretch; }
+.demo--wide { grid-column: 1 / -1; }
+
+.field { display: grid; gap: 6px; width: 100%; }
+.check { display: inline-flex; gap: 8px; align-items: center; color: var(--txt-2); font-size: 12px; }
+
+.status { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; border: 1px solid var(--bdr); background: var(--surface); color: var(--txt-3); font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+.status i { width: 6px; height: 6px; background: var(--txt-4); }
+.status--ok i { background: var(--green); }
+.status--busy i { background: var(--amber); animation: blink .8s step-end infinite; }
+.status--offline i { background: var(--txt-3); }
+.status--error { color: var(--rose); border-color: color-mix(in srgb, var(--rose) 40%, transparent); }
+.status--error i { background: var(--rose); }
+
+.nav-demo { display: grid; width: 100%; }
+.nav-item { display: flex; gap: 8px; align-items: center; padding: 5px 8px; color: var(--txt-2); border-left: 2px solid transparent; font-size: 12.5px; }
+.nav-item:hover { color: var(--txt); background: var(--surface-2); }
+.nav-item.is-active { color: var(--txt); background: var(--amber-wash); border-left-color: var(--amber); }
+.nav-item span:first-child { width: 18px; text-align: center; color: var(--txt-3); }
+
+.tabs { display: flex; border-bottom: 1px solid var(--bdr); width: 100%; overflow-x: auto; }
+.tabs button { background: none; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; padding: 8px 12px; color: var(--txt-3); font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; cursor: pointer; white-space: nowrap; }
+.tabs button:hover { color: var(--txt); }
+.tabs button.is-active { color: var(--amber); border-bottom-color: var(--amber); }
+.tab-panel { color: var(--txt-2); font-size: 12px; padding-top: 4px; }
+
+.menu-demo { width: 100%; max-width: 260px; background: var(--panel); border: 1px solid var(--bdr-hi); box-shadow: var(--shadow-float); padding: 4px 0; }
+.menu-demo__heading { padding: 6px 12px 2px; font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--txt-3); }
+.menu-demo__item { display: grid; grid-template-columns: 20px 1fr auto; gap: 8px; align-items: center; padding: 6px 12px; font-size: 12.5px; cursor: default; }
+.menu-demo__item:hover, .menu-demo__item.is-focus { background: var(--amber-wash); color: var(--amber); }
+.menu-demo__item.danger:hover { background: color-mix(in srgb, var(--rose) 12%, transparent); color: var(--rose); }
+.menu-demo__item span:first-child { color: var(--txt-3); text-align: center; }
+.menu-demo__item kbd { height: 18px; font-size: 9.5px; }
+.menu-demo__sep { height: 1px; background: var(--bdr); margin: 4px 0; }
+
+.palette-demo { width: 100%; background: var(--panel); border: 1px solid var(--bdr-hi); box-shadow: var(--shadow-float); }
+.palette-demo__prompt { display: flex; align-items: center; gap: 10px; padding: 0 14px; height: 44px; border-bottom: 1px solid var(--bdr); font-size: 13.5px; }
+.palette-demo__prompt b { color: var(--amber); font-weight: 800; }
+.palette-demo__row { display: grid; grid-template-columns: 22px 1fr auto; gap: 10px; align-items: center; padding: 7px 14px; border-left: 2px solid transparent; font-size: 12.5px; }
+.palette-demo__row.is-selected { background: var(--amber-wash); border-left-color: var(--amber); }
+.palette-demo__row small { display: block; color: var(--txt-3); font-size: 11px; }
+.palette-demo__row mark { background: var(--amber-wash); color: var(--amber); box-shadow: inset 0 -1px var(--amber-line); }
+.palette-demo__foot { display: flex; flex-wrap: wrap; gap: 14px; padding: 8px 14px; border-top: 1px solid var(--bdr); color: var(--txt-3); font-size: 10.5px; }
+
+.toast { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 10px 12px; background: var(--panel); border: 1px solid var(--bdr-hi); border-left: 2px solid var(--blue); font-size: 12px; }
+.toast--warning { border-left-color: var(--amber); }
+.toast--error { border-left-color: var(--rose); }
+.toast--success { border-left-color: var(--green); }
+.toast button { background: none; border: 1px solid var(--amber-line); color: var(--amber); padding: 3px 8px; font-size: 11px; cursor: pointer; }
+
+.terminal { width: 100%; background: var(--panel); border: 1px solid var(--bdr-hi); }
+.terminal__bar { display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; background: var(--code-surface-header); border-bottom: 1px solid var(--bdr); }
+.terminal__bar i { width: 8px; height: 8px; border: 1px solid #c0caf533; }
+.terminal__bar span { margin-left: 8px; color: var(--code-dim); font-size: 11px; }
+.terminal__body { padding: 14px 16px; display: grid; gap: 10px; }
+
+.avatar { width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; background: var(--amber-wash); border: 1px solid var(--amber-line); color: var(--amber); font-size: 10.5px; font-weight: 700; }
+.tag { display: inline-flex; align-items: center; height: 22px; border: 1px solid var(--amber-line); background: var(--amber-wash); }
+.tag b { color: var(--amber); font-weight: 400; font-size: 11.5px; padding: 0 4px 0 7px; }
+.tag button { background: none; border: 0; color: var(--txt-3); padding: 0 6px 0 2px; cursor: pointer; }
+.tag button:hover { color: var(--rose); }
+
+.callout { width: 100%; display: grid; grid-template-columns: auto 1fr; gap: 10px; padding: 10px 12px; border: 1px solid var(--bdr); border-left: 2px solid var(--c); background: color-mix(in srgb, var(--c) 7%, transparent); font-size: 12px; }
+.callout b { color: var(--c); font-weight: 700; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; padding-top: 2px; }
+
+.progress { display: flex; align-items: center; gap: 10px; width: 100%; }
+.progress__track { flex: 1; height: 3px; background: var(--surface-3); }
+.progress__track span { display: block; height: 100%; width: 64%; background: var(--amber); }
+.progress small { font-variant-numeric: tabular-nums; color: var(--txt-3); font-size: 10.5px; }
+
+.empty { width: 100%; padding: 16px; border: 1px dashed var(--bdr-hi); color: var(--txt-3); font-size: 12px; text-align: left; background: transparent; cursor: pointer; }
+.empty:hover { border-color: var(--amber-line); color: var(--amber); }
+
+.shape-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.shape { padding: 14px; min-height: 92px; display: grid; align-content: space-between; gap: 10px; font-size: 12px; color: var(--txt-2); }
+.shape--hair { border: 1px solid var(--bdr); }
+.shape--selected { background: var(--amber-wash); border-left: 2px solid var(--amber); color: var(--txt); }
+.shape--dashed { border: 1px dashed var(--bdr-hi); }
+.shape--float { background: var(--panel); border: 1px solid var(--bdr-hi); box-shadow: var(--shadow-float); color: var(--txt); }
+.shape--tab { border-bottom: 2px solid var(--amber); color: var(--amber); }
+
+.motion-demo { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.pop { animation: pop .12s ease-out; }
+.rise { animation: rise .18s ease-out; }
+@keyframes pop { from { transform: translateY(-3px); opacity: 0; } }
+@keyframes rise { from { transform: translateY(6px); opacity: 0; } }
+
+/* Code ------------------------------------------------------------------------------------------ */
+.code { border: 1px solid var(--code-bdr); background: var(--code-surface); color: var(--code-txt); min-width: 0; width: 100%; }
+.code__bar { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 8px 0 12px; background: var(--code-surface-header); border-bottom: 1px solid var(--code-bdr); }
+.code__bar i { width: 8px; height: 8px; border: 1px solid #c0caf533; }
+.code__bar span { margin-left: 6px; color: var(--code-dim); font-size: 11px; flex: 1; }
+.code__bar button { background: transparent; border: 1px solid var(--code-bdr); color: var(--code-dim); font-size: 10.5px; height: 24px; padding: 0 9px; cursor: pointer; }
+.code__bar button:hover { color: #fbbf24; border-color: #fbbf2452; }
+.code pre { margin: 0; padding: 14px 16px; overflow-x: auto; font-size: 12.5px; line-height: 1.65; }
+.code pre.tall { max-height: 520px; }
+.code code { color: inherit; background: none; border: 0; padding: 0; font-size: inherit; }
+.t-com { color: var(--s-com); } .t-key { color: var(--s-key); } .t-str { color: var(--s-str); }
+.t-num { color: var(--s-num); } .t-fn { color: var(--s-fn); } .t-tag { color: var(--s-tag); }
+
+/* Do / don't & checklist ---------------------------------------------------------------------- */
+.dodont { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--bdr); }
+.dodont > div { padding: 14px 16px; display: grid; gap: 8px; align-content: start; }
+.dodont > div:first-child { border-right: 1px solid var(--bdr); }
+.dodont ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 7px; font-size: 12.5px; color: var(--txt-2); }
+.dodont li { display: grid; grid-template-columns: 16px 1fr; gap: 6px; }
+.do li::before { content: "+"; color: var(--green); font-weight: 700; }
+.dont li::before { content: "−"; color: var(--rose); font-weight: 700; }
+.checklist { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; max-width: 72ch; }
+.checklist label { display: grid; grid-template-columns: 16px 1fr; gap: 10px; align-items: start; color: var(--txt-2); font-size: 12.5px; cursor: pointer; }
+.checklist input { margin-top: 3px; }
+.checklist input:checked + span { color: var(--txt-3); text-decoration: line-through; }
+
+.footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--bdr); color: var(--txt-3); font-size: 11.5px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
+
+.toast-region { position: fixed; right: max(16px, calc(env(safe-area-inset-right, 0px) + 16px)); bottom: calc(env(safe-area-inset-bottom, 0px) + 16px); z-index: 50; display: grid; gap: 8px; width: min(340px, calc(100vw - 32px)); }
+.toast-region .toast { box-shadow: var(--shadow-float); animation: rise .18s ease-out; }
+
+@media (max-width: 980px) {
+    .shell { grid-template-columns: minmax(0, 1fr); gap: 0; }
+    .toc { display: none; }
+}
+@media (max-width: 640px) {
+    .specimen { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+    .dodont { grid-template-columns: 1fr; }
+    .dodont > div:first-child { border-right: 0; border-bottom: 1px solid var(--bdr); }
+    .topbar .btn, .topbar .badge { display: none; }
+    .hero { padding-block: 36px 28px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+</style>
+
+</head>
+<body>
+<div class="atmos" aria-hidden="true"><div class="atmos-glow"></div><div class="atmos-grid"></div></div>
+
+<header class="topbar">
+    <div class="topbar__inner">
+        <a class="brand" href="#top">terminal mono<span class="cursor" aria-hidden="true"></span></a>
+        <span class="badge badge--neutral">v1</span>
+        <div class="topbar__spacer"></div>
+        <div class="segmented" role="radiogroup" aria-label="Theme" id="theme-switch">
+            <button type="button" role="radio" data-theme-choice="system" id="theme-system">system</button>
+            <button type="button" role="radio" data-theme-choice="dark" id="theme-dark">dark</button>
+            <button type="button" role="radio" data-theme-choice="light" id="theme-light">light</button>
+        </div>
+        <a class="btn btn-primary btn-sm" href="#starter"><span class="copy-label">starter</span> css</a>
+    </div>
+</header>
+
+<div class="shell" id="top">
+    <nav class="toc" aria-label="Contents">
+        <div class="eyebrow" style="margin-bottom:8px">contents</div>
+        <a href="#principles"><span>01</span>principles</a>
+        <a href="#colour"><span>02</span>colour</a>
+        <a href="#type"><span>03</span>typography</a>
+        <a href="#space"><span>04</span>space &amp; layout</a>
+        <a href="#shape"><span>05</span>shape &amp; elevation</a>
+        <a href="#atmosphere"><span>06</span>atmosphere</a>
+        <a href="#components"><span>07</span>components</a>
+        <a href="#motion"><span>08</span>motion</a>
+        <a href="#a11y"><span>09</span>accessibility</a>
+        <a href="#theming"><span>10</span>theming</a>
+        <a href="#voice"><span>11</span>voice</a>
+        <a href="#dodont"><span>12</span>do &amp; don't</a>
+        <a href="#starter"><span>13</span>starter css</a>
+        <a href="#checklist"><span>14</span>checklist</a>
+    </nav>
+
+    <main>
+        <section class="hero">
+            <div class="eyebrow"><span class="accent">~/</span>design-system <span class="accent">●</span> dark-first</div>
+            <h1>Looks like a terminal.<br><span class="hl">Works like an app.</span><span class="cursor" aria-hidden="true"></span></h1>
+            <p>A reusable design language for developer-flavoured web apps: monospace everywhere, hairline borders, square corners and one warm accent. Every element on this page is built with the tokens and components it describes, so switch the theme above to see both palettes.</p>
+            <div class="hero__meta">
+                <div><span class="eyebrow">typeface</span><strong>JetBrains Mono</strong></div>
+                <div><span class="eyebrow">radius</span><strong>0px</strong></div>
+                <div><span class="eyebrow">accent</span><strong class="accent">amber</strong></div>
+                <div><span class="eyebrow">base size</span><strong>13px / 1.6</strong></div>
+                <div><span class="eyebrow">themes</span><strong>dark · light</strong></div>
+            </div>
+            <div class="hero__actions">
+                <a class="btn btn-primary" href="#starter">$ copy starter css</a>
+                <a class="btn btn-ghost" href="#components">see components</a>
+            </div>
+        </section>
+
+        <!-- 01 -->
+        <section class="section" id="principles">
+            <div class="section__head">
+                <div class="eyebrow">01/principles</div>
+                <h2>Seven rules everything follows</h2>
+            </div>
+            <div class="principles">
+                <div class="principle"><div class="eyebrow">monospace</div><h3>One typeface everywhere</h3><p>UI, content and code share one face. Hierarchy comes from size, weight, case and colour.</p></div>
+                <div class="principle"><div class="eyebrow">shape</div><h3>Square and flat</h3><p>Radius is 0. Hairlines separate surfaces; only floating layers cast shadows.</p></div>
+                <div class="principle"><div class="eyebrow">accent</div><h3>One accent, sparingly</h3><p>Amber marks the primary action, the selection, focus and live state. If everything is amber, nothing is.</p></div>
+                <div class="principle"><div class="eyebrow">hierarchy</div><h3>Quiet chrome, loud content</h3><p>Controls are small, dim and labelled in caps; the user's content is larger and brighter.</p></div>
+                <div class="principle"><div class="eyebrow">surfaces</div><h3>Translucent layers</h3><p>Fills are low-alpha tints of the text colour, so they stack and adapt to both themes.</p></div>
+                <div class="principle"><div class="eyebrow">controls</div><h3>Reveal on intent</h3><p>Secondary controls appear on hover and focus, and stay out of the way otherwise.</p></div>
+                <div class="principle"><div class="eyebrow">voice</div><h3>Terminal garnish</h3><p><code>~/path</code>, <code>$ sign in</code> and <code>01/</code> indices decorate. They never replace clear labels.</p></div>
+            </div>
+        </section>
+
+        <!-- 02 -->
+        <section class="section" id="colour">
+            <div class="section__head">
+                <div class="eyebrow">02/colour</div>
+                <h2>Tokens, both themes</h2>
+                <p>Components use tokens only. Dark is defined on <code>:root</code>; light overrides it under <code>[data-theme="light"]</code>. Click any value to copy it.</p>
+            </div>
+            <div class="eyebrow" style="margin-bottom:8px">current theme</div>
+            <div class="swatch-strip" id="live-swatches"></div>
+
+            <h3 class="sub">All tokens</h3>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>token</th><th>dark</th><th>light</th><th>role</th></tr></thead>
+                    <tbody id="token-table"></tbody>
+                </table>
+            </div>
+
+            <h3 class="sub">Contrast (WCAG, against background)</h3>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>text token</th><th>dark</th><th>light</th><th>use for</th></tr></thead>
+                    <tbody>
+                        <tr><td>--txt</td><td class="num pass">16.5</td><td class="num pass">17.8</td><td class="wrap">Anything</td></tr>
+                        <tr><td>--txt-2</td><td class="num pass">8.1</td><td class="num pass">7.9</td><td class="wrap">Anything</td></tr>
+                        <tr><td>--txt-3</td><td class="num pass">4.9</td><td class="num pass">4.6</td><td class="wrap">Small labels and meta. Meets AA (4.5) on every surface.</td></tr>
+                        <tr><td>--txt-4</td><td class="num warn">2.0</td><td class="num warn">1.8</td><td class="wrap">Placeholders, disabled, ornaments. Never information.</td></tr>
+                        <tr><td>--amber</td><td class="num pass">12.1</td><td class="num pass">4.6</td><td class="wrap">Accent text and icons</td></tr>
+                        <tr><td>--on-amber on fill</td><td class="num pass">13.7</td><td class="num pass">13.7</td><td class="wrap">Primary buttons</td></tr>
+                        <tr><td>status colours</td><td class="num pass">7.6–11.7</td><td class="num pass">4.6–7.0</td><td class="wrap">Text and icons. Always pair colour with words.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <h3 class="sub">Using the accent</h3>
+            <div class="dodont">
+                <div class="do"><div class="eyebrow">amber is for</div><ul><li>The one primary button per view</li><li>Active nav item, tab, selected row</li><li>Focus rings, text selection, the cursor</li><li>Progress and live indicators</li></ul></div>
+                <div class="dont"><div class="eyebrow">not for</div><ul><li>Body links (use blue)</li><li>Decorative borders</li><li>Several buttons on one screen</li><li>Large backgrounds (use the wash)</li></ul></div>
+            </div>
+            <p class="prose">Status mapping: info <b style="color:var(--blue)">blue</b>, success <b style="color:var(--green)">green</b>, warning <b class="accent">amber</b>, error <b style="color:var(--rose)">rose</b>, note <b style="color:var(--violet)">violet</b>. Tinted panels mix 7% of the colour into transparent and add a 2px left border in the solid colour.</p>
+        </section>
+
+        <!-- 03 -->
+        <section class="section" id="type">
+            <div class="section__head">
+                <div class="eyebrow">03/typography</div>
+                <h2>One face, a strict scale</h2>
+                <p>Big text gets negative tracking; tiny uppercase text gets positive tracking. Nothing goes below 9.5px. Turn on the slashed zero and turn off ligatures.</p>
+            </div>
+            <div class="specimens">
+                <div class="specimen"><div class="specimen__meta"><span class="eyebrow">hero</span><span>clamp(38–84px) · 800 · −0.06em</span></div><div class="specimen__sample" style="font-size:clamp(30px,5vw,56px);font-weight:800;letter-spacing:-.06em;line-height:.94">Ship it. <span class="accent">Sync it.</span></div></div>
+                <div class="specimen"><div class="specimen__meta"><span class="eyebrow">page title</span><span>clamp(28–42px) · 800 · −0.045em</span></div><div class="specimen__sample" style="font-size:clamp(26px,3.6vw,38px);font-weight:800;letter-spacing:-.045em;line-height:1.08">Launch plan</div></div>
+                <div class="specimen"><div class="specimen__meta"><span class="eyebrow">h1</span><span>28px · 800 · −0.035em</span></div><div class="specimen__sample" style="font-size:28px;font-weight:800;letter-spacing:-.035em;line-height:1.25">Release notes</div></div>
+                <div class="specimen"><div class="specimen__meta"><span class="eyebrow">h2</span><span>21px · 800 · −0.035em</span></div><div class="specimen__sample" style="font-size:21px;font-weight:800;letter-spacing:-.035em">Open questions</div></div>
+                <div class="specimen"><div class="specimen__meta"><span class="eyebrow">h3</span><span>16px · 800 · −0.02em</span></div><div class="specimen__sample" style="font-size:16px;font-weight:800;letter-spacing:-.02em">Next steps</div></div>
+                <div class="specimen"><div class="specimen__meta"><span class="eyebrow">content</span><span>14px · 400 · lh 1.7</span></div><div class="specimen__sample" style="font-size:14px;line-height:1.7">Offline edits queue locally and sync when the connection returns. 0 vs O stays unambiguous.</div></div>
+                <div class="specimen"><div class="specimen__meta"><span class="eyebrow">ui base</span><span>13px · 400 · lh 1.6</span></div><div class="specimen__sample">Settings, sessions and sign-out live here.</div></div>
+                <div class="specimen"><div class="specimen__meta"><span class="eyebrow">controls</span><span>12–12.5px · 600</span></div><div class="specimen__sample" style="font-size:12px;font-weight:600">new page · share · history</div></div>
+                <div class="specimen"><div class="specimen__meta"><span class="eyebrow">meta</span><span>11–11.5px · tabular</span></div><div class="specimen__sample muted num">edited 2m ago · v17 · 3 pending</div></div>
+                <div class="specimen"><div class="specimen__meta"><span class="eyebrow">eyebrow</span><span>10.5px · 600 · +0.1em · caps</span></div><div class="specimen__sample"><span class="eyebrow"><span class="accent">~/</span>pages</span> &nbsp; <span class="eyebrow">01/pages</span> &nbsp; <span class="eyebrow">02/shared</span></div></div>
+                <div class="specimen"><div class="specimen__meta"><span class="eyebrow">micro badge</span><span>9.5px · 700 · +0.08em</span></div><div class="specimen__sample"><span class="badge">owner</span> <span class="badge badge--neutral">read only</span></div></div>
+            </div>
+            <p class="prose">Numbered indices (<code>01/</code>, <code>02/</code>) are for peer sections of one list: sidebar groups, tabs, feature cards. Don't number a single item.</p>
+        </section>
+
+        <!-- 04 -->
+        <section class="section" id="space">
+            <div class="section__head">
+                <div class="eyebrow">04/space &amp; layout</div>
+                <h2>A 2px base, tight inside, roomy between</h2>
+            </div>
+            <div class="ruler" id="ruler"></div>
+            <h3 class="sub">Sizes</h3>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>thing</th><th>size</th><th>notes</th></tr></thead>
+                    <tbody>
+                        <tr><td>button</td><td class="num">34px · 28px small</td><td class="wrap">22px for inline toolbars; icon buttons 28×28</td></tr>
+                        <tr><td>top bar</td><td class="num">48px</td><td class="wrap">Sticky, translucent, hairline bottom edge</td></tr>
+                        <tr><td>sidebar · drawer</td><td class="num">272px · 360px</td><td class="wrap">Drawer overlays below 1180px; sidebar goes off-canvas below 860px</td></tr>
+                        <tr><td>reading column</td><td class="num">~760px</td><td class="wrap">About 65–70 characters of body text</td></tr>
+                        <tr><td>background grid</td><td class="num">32px</td><td class="wrap">Align big gaps to multiples of 8</td></tr>
+                        <tr><td>breakpoints</td><td class="num">1180 · 860 · 520</td><td class="wrap">Overlay drawers · single column · hide tertiary actions</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 05 -->
+        <section class="section" id="shape">
+            <div class="section__head">
+                <div class="eyebrow">05/shape &amp; elevation</div>
+                <h2>Edges do the work shadows usually do</h2>
+                <p>Radius is 0 everywhere. Emphasis comes from a 2px edge in amber or a status colour. Only menus, modals, toasts and palettes float.</p>
+            </div>
+            <div class="shape-grid">
+                <div class="shape shape--hair"><span class="eyebrow">default</span>1px <code>--bdr</code> hairline</div>
+                <div class="shape shape--selected"><span class="eyebrow">selected</span>amber wash + 2px left edge</div>
+                <div class="shape shape--tab"><span class="eyebrow">active tab</span>2px bottom edge</div>
+                <div class="shape shape--dashed"><span class="eyebrow">empty / drop</span>1px dashed <code>--bdr-hi</code></div>
+                <div class="shape shape--float"><span class="eyebrow">floating</span><code>--shadow-float</code> on <code>--panel</code></div>
+            </div>
+            <p class="prose">Sticky chrome is translucent: <code>background: var(--nav-bg); backdrop-filter: blur(14px) saturate(140%)</code>. Modal backdrops use <code>--scrim</code> with a 3px blur.</p>
+        </section>
+
+        <!-- 06 -->
+        <section class="section" id="atmosphere">
+            <div class="section__head">
+                <div class="eyebrow">06/atmosphere</div>
+                <h2>Depth without noise</h2>
+                <p>You're looking at it: two fixed layers behind the page. A 32px grid in <code>--grid</code>, faded out with a radial mask, and two blurred glows, amber top-left and blue top-right, at 70% opacity (50% in light).</p>
+            </div>
+            <p class="prose">One signature motif: the <strong>blinking block cursor</strong><span class="cursor" aria-hidden="true"></span>, amber, 0.5em × 0.82em, <code>1.05s step-end</code>. Use it after the wordmark and the hero headline, never in body text. Keep atmosphere at <code>z-index: 0</code> with <code>pointer-events: none</code>.</p>
+        </section>
+
+        <!-- 07 -->
+        <section class="section" id="components">
+            <div class="section__head">
+                <div class="eyebrow">07/components</div>
+                <h2>Live previews</h2>
+                <p>Hover, click and tab through them. Every state shown here is part of the spec.</p>
+            </div>
+            <div class="demo-grid">
+                <div class="demo">
+                    <div class="demo__head"><span class="eyebrow">buttons</span><span class="muted">one primary per view</span></div>
+                    <div class="demo__body">
+                        <button class="btn btn-primary" type="button">+ new page</button>
+                        <button class="btn btn-ghost" type="button">share</button>
+                        <button class="btn btn-danger" type="button">delete</button>
+                        <button class="btn btn-ghost btn-sm" type="button">small</button>
+                        <button class="btn btn-primary btn-sm" type="button" disabled>disabled</button>
+                        <button class="icon-btn" type="button" aria-label="More actions">⋯</button>
+                        <button class="link-btn" type="button">link button</button>
+                    </div>
+                </div>
+                <div class="demo">
+                    <div class="demo__head"><span class="eyebrow">inputs</span><span class="muted">eyebrow labels</span></div>
+                    <div class="demo__body stack">
+                        <label class="field" for="demo-email"><span class="eyebrow">email</span><input id="demo-email" type="email" placeholder="you@example.com"></label>
+                        <label class="field" for="demo-role"><span class="eyebrow">role</span><select id="demo-role"><option>can edit</option><option>can view</option></select></label>
+                        <label class="check" for="demo-check"><input id="demo-check" type="checkbox" checked> remember this device</label>
+                    </div>
+                </div>
+                <div class="demo">
+                    <div class="demo__head"><span class="eyebrow">keycaps · badges · status</span></div>
+                    <div class="demo__body">
+                        <kbd>⌘K</kbd><kbd>Ctrl+F</kbd><kbd>esc</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>↵</kbd>
+                        <span class="badge">owner</span><span class="badge badge--neutral">viewer</span>
+                        <span class="status status--ok"><i></i>synced</span>
+                        <span class="status status--busy"><i></i>syncing</span>
+                        <span class="status status--offline"><i></i>offline · 3 queued</span>
+                        <span class="status status--error"><i></i>1 conflict</span>
+                    </div>
+                </div>
+                <div class="demo">
+                    <div class="demo__head"><span class="eyebrow">navigation</span><span class="muted">2px active edge</span></div>
+                    <div class="demo__body stack">
+                        <div class="eyebrow">01/pages</div>
+                        <div class="nav-demo">
+                            <div class="nav-item is-active"><span>📋</span><span>Launch plan</span></div>
+                            <div class="nav-item"><span>🗓</span><span>Meeting notes</span></div>
+                            <div class="nav-item"><span>·</span><span>Reading list</span></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="demo">
+                    <div class="demo__head"><span class="eyebrow">tabs</span><span class="muted">numbered peers</span></div>
+                    <div class="demo__body stack">
+                        <div class="tabs" role="tablist" id="demo-tabs">
+                            <button type="button" role="tab" class="is-active" data-panel="Email, verification status and password.">01/account</button>
+                            <button type="button" role="tab" data-panel="Every signed-in device, with a sign-out button for each.">02/devices</button>
+                            <button type="button" role="tab" data-panel="System, dark or light.">03/appearance</button>
+                        </div>
+                        <div class="tab-panel" id="demo-tab-panel">Email, verification status and password.</div>
+                    </div>
+                </div>
+                <div class="demo">
+                    <div class="demo__head"><span class="eyebrow">menu</span><span class="muted">float shadow</span></div>
+                    <div class="demo__body">
+                        <div class="menu-demo" role="menu" aria-label="Block menu example">
+                            <div class="menu-demo__heading">text</div>
+                            <div class="menu-demo__item is-focus" role="menuitem"><span>⧉</span><span>Duplicate</span><kbd>⌘D</kbd></div>
+                            <div class="menu-demo__item" role="menuitem"><span>↑</span><span>Move up</span><kbd>⌘↑</kbd></div>
+                            <div class="menu-demo__sep"></div>
+                            <div class="menu-demo__item danger" role="menuitem"><span>×</span><span>Delete</span><kbd>del</kbd></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="demo demo--wide">
+                    <div class="demo__head"><span class="eyebrow">command palette</span><span class="muted">&gt; actions · ? search</span></div>
+                    <div class="demo__body">
+                        <div class="palette-demo">
+                            <div class="palette-demo__prompt"><b>?</b><span>docs</span></div>
+                            <div class="palette-demo__row is-selected"><span>📄</span><span>Launch plan<small>Write <mark>docs</mark> · Record demo</small></span><span class="eyebrow">page</span></div>
+                            <div class="palette-demo__row"><span>📄</span><span>API notes<small>Public <mark>docs</mark> live at /docs</small></span><span class="eyebrow">shared</span></div>
+                            <div class="palette-demo__foot"><span><kbd>↑</kbd><kbd>↓</kbd> navigate</span><span><kbd>↵</kbd> open</span><span><kbd>esc</kbd> close</span></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="demo">
+                    <div class="demo__head"><span class="eyebrow">toasts</span><span class="muted">left edge = type</span></div>
+                    <div class="demo__body stack">
+                        <div class="toast toast--success"><span>All changes synced</span></div>
+                        <div class="toast toast--warning"><span>Edit conflicted with another device.</span><button type="button" id="demo-review">review</button></div>
+                        <div class="toast toast--error"><span>Cannot reach the server.</span></div>
+                    </div>
+                </div>
+                <div class="demo">
+                    <div class="demo__head"><span class="eyebrow">terminal card</span><span class="muted">auth, showcases</span></div>
+                    <div class="demo__body">
+                        <div class="terminal">
+                            <div class="terminal__bar"><i></i><i></i><i></i><span>~/app/auth</span></div>
+                            <div class="terminal__body">
+                                <label class="field" for="demo-pw"><span class="eyebrow">password</span><input id="demo-pw" type="password" value="hunter22"></label>
+                                <button class="btn btn-primary" type="button">$ sign in</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="demo">
+                    <div class="demo__head"><span class="eyebrow">callouts</span><span class="muted">7% tint + 2px edge</span></div>
+                    <div class="demo__body stack">
+                        <div class="callout" style="--c:var(--blue)"><b>info</b><span>Versions are saved automatically.</span></div>
+                        <div class="callout" style="--c:var(--green)"><b>done</b><span>Imported 12 pages.</span></div>
+                        <div class="callout" style="--c:var(--amber)"><b>warn</b><span>You are offline. Edits are queued.</span></div>
+                        <div class="callout" style="--c:var(--rose)"><b>error</b><span>That link has expired.</span></div>
+                        <div class="callout" style="--c:var(--violet)"><b>note</b><span>Shared by ana@example.com.</span></div>
+                    </div>
+                </div>
+                <div class="demo demo--wide">
+                    <div class="demo__head"><span class="eyebrow">chips · avatars · progress · empty state</span></div>
+                    <div class="demo__body stack">
+                        <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+                            <span class="tag"><b>#work</b><button type="button" aria-label="Remove tag work">×</button></span>
+                            <span class="tag"><b>#q4</b><button type="button" aria-label="Remove tag q4">×</button></span>
+                            <span class="avatar" title="ana@example.com is viewing">A</span><span class="avatar" title="ben@example.com is viewing">B</span><span class="muted">2 here</span>
+                        </div>
+                        <div class="progress"><div class="progress__track"><span></span></div><small>16/25</small></div>
+                        <button class="empty" type="button">Empty page. Click here or press Enter to start writing.</button>
+                    </div>
+                </div>
+                <div class="demo demo--wide">
+                    <div class="demo__head"><span class="eyebrow">code block</span><span class="muted">stays dark in both themes</span></div>
+                    <div class="demo__body">
+                        <div class="code">
+                            <div class="code__bar"><i></i><i></i><i></i><span>sync.py</span></div>
+<pre><code><span class="t-com"># Only edits to the same entity from another device conflict.</span>
+<span class="t-key">async def</span> <span class="t-fn">concurrent_change</span>(session, actor, entity_id, base_version):
+    <span class="t-key">return await</span> session.<span class="t-fn">scalar</span>(
+        <span class="t-fn">select</span>(SyncOperation).<span class="t-fn">where</span>(
+            SyncOperation.entity_id == entity_id,
+            SyncOperation.page_version &gt; base_version,
+            SyncOperation.device_id != actor.device_id,
+        ).<span class="t-fn">limit</span>(<span class="t-num">1</span>)
+    )  <span class="t-com"># → </span><span class="t-str">"version_mismatch"</span></code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 08 -->
+        <section class="section" id="motion">
+            <div class="section__head">
+                <div class="eyebrow">08/motion</div>
+                <h2>Fast, small, no bounce</h2>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>what</th><th>duration</th><th>movement</th></tr></thead>
+                    <tbody>
+                        <tr><td>hover colour, border, fill</td><td class="num">120–150ms</td><td>none</td></tr>
+                        <tr><td>reveal-on-hover controls</td><td class="num">120ms</td><td>opacity only</td></tr>
+                        <tr><td>menu, popover, palette in</td><td class="num">120ms</td><td>from −3px, fade</td></tr>
+                        <tr><td>toast, modal in</td><td class="num">160–180ms</td><td>from +6px, fade</td></tr>
+                        <tr><td>off-canvas sidebar</td><td class="num">200ms</td><td>transform</td></tr>
+                        <tr><td>cursor blink</td><td class="num">1.05s</td><td>step-end, infinite</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="motion-demo" style="margin-top:14px">
+                <button class="btn btn-ghost btn-sm" type="button" id="demo-pop">play popover in</button>
+                <button class="btn btn-ghost btn-sm" type="button" id="demo-rise">play toast in</button>
+                <span class="badge" id="demo-target">preview</span>
+                <span class="muted">Turned off entirely under prefers-reduced-motion.</span>
+            </div>
+        </section>
+
+        <!-- 09 -->
+        <section class="section" id="a11y">
+            <div class="section__head">
+                <div class="eyebrow">09/accessibility</div>
+                <h2>Readable, reachable, honest</h2>
+            </div>
+            <div class="principles">
+                <div class="principle"><div class="eyebrow">focus</div><h3>Always visible</h3><p>1px amber outline, 2px offset, on <code>:focus-visible</code>. Never remove it without a replacement.</p></div>
+                <div class="principle"><div class="eyebrow">state</div><h3>Never colour alone</h3><p>A status dot always has a label; a read-only page shows a badge, not just a grey title.</p></div>
+                <div class="principle"><div class="eyebrow">keyboard</div><h3>Every action, every key</h3><p>Arrows, Enter and Esc in lists and menus. Shortcuts appear as keycaps in menus.</p></div>
+                <div class="principle"><div class="eyebrow">hover</div><h3>Hover also means focus</h3><p>Anything revealed on hover also shows on <code>:focus-within</code>, and is always reachable on touch.</p></div>
+                <div class="principle"><div class="eyebrow">targets</div><h3>Big enough to hit</h3><p>At least 28px on desktop, 40px preferred on touch.</p></div>
+                <div class="principle"><div class="eyebrow">semantics</div><h3>Name the controls</h3><p><code>aria-label</code> on icon buttons, <code>role="dialog"</code> on modals, <code>aria-live</code> on status.</p></div>
+            </div>
+        </section>
+
+        <!-- 10 -->
+        <section class="section" id="theming">
+            <div class="section__head">
+                <div class="eyebrow">10/theming</div>
+                <h2>Dark first, light on request, no flash</h2>
+                <p>Store the preference as <code>system | dark | light</code>, resolve <code>system</code> with <code>prefers-color-scheme</code>, set <code>color-scheme</code> in each theme block, and apply <code>data-theme</code> before first paint.</p>
+            </div>
+            <div class="code">
+                <div class="code__bar"><i></i><i></i><i></i><span>&lt;head&gt;</span></div>
+<pre><code><span class="t-tag">&lt;script&gt;</span>
+  (<span class="t-key">function</span> () {
+    <span class="t-key">var</span> pref = <span class="t-str">'system'</span>;
+    <span class="t-key">try</span> { pref = localStorage.<span class="t-fn">getItem</span>(<span class="t-str">'theme'</span>) || <span class="t-str">'system'</span>; } <span class="t-key">catch</span> (e) {}
+    <span class="t-key">var</span> dark = <span class="t-fn">matchMedia</span>(<span class="t-str">'(prefers-color-scheme: dark)'</span>).matches;
+    document.documentElement.dataset.theme = pref === <span class="t-str">'system'</span> ? (dark ? <span class="t-str">'dark'</span> : <span class="t-str">'light'</span>) : pref;
+  })();
+<span class="t-tag">&lt;/script&gt;</span>
+<span class="t-tag">&lt;meta</span> name=<span class="t-str">"theme-color"</span> content=<span class="t-str">"#06070b"</span><span class="t-tag">&gt;</span></code></pre>
+            </div>
+        </section>
+
+        <!-- 11 -->
+        <section class="section" id="voice">
+            <div class="section__head">
+                <div class="eyebrow">11/voice</div>
+                <h2>Lowercase labels, plain sentences</h2>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>write</th><th>not</th><th>why</th></tr></thead>
+                    <tbody>
+                        <tr><td>new page</td><td>New Page</td><td class="wrap">UI labels are lowercase verbs</td></tr>
+                        <tr><td>$ sign in</td><td>&gt;&gt;&gt; AUTHENTICATE</td><td class="wrap">Shell flavour is garnish, one or two per screen</td></tr>
+                        <tr><td>3 pending · 1 conflict</td><td>Some items need attention</td><td class="wrap">Specific beats vague</td></tr>
+                        <tr><td>Cannot reach the server. Is the backend running?</td><td>Oops! Something went wrong</td><td class="wrap">Say what happened and what to do</td></tr>
+                        <tr><td>Write it down. / Sync everywhere.</td><td>The best note app ever</td><td class="wrap">Headlines in two beats, second in amber</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 12 -->
+        <section class="section" id="dodont">
+            <div class="section__head">
+                <div class="eyebrow">12/do &amp; don't</div>
+                <h2>Guardrails</h2>
+            </div>
+            <div class="dodont">
+                <div class="do"><div class="eyebrow">do</div><ul>
+                    <li>One typeface; hierarchy from size, weight, case</li>
+                    <li>Hairlines and translucent fills</li>
+                    <li>One amber primary per view</li>
+                    <li>Square corners</li>
+                    <li>Dim, small chrome; bright, larger content</li>
+                    <li>Status as colour and words</li>
+                    <li>Tokens only in component CSS</li>
+                    <li>Terminal details as accents</li>
+                </ul></div>
+                <div class="dont"><div class="eyebrow">don't</div><ul>
+                    <li>Mix in a sans-serif "for readability"</li>
+                    <li>Drop shadows on cards</li>
+                    <li>Amber borders on everything</li>
+                    <li>"Just a little" 4px radius</li>
+                    <li>Equal weight everywhere</li>
+                    <li>A red dot as the only error signal</li>
+                    <li>Raw hex values in components</li>
+                    <li>ASCII art, scanlines, green-on-black pastiche</li>
+                </ul></div>
+            </div>
+        </section>
+
+        <!-- 13 -->
+        <section class="section" id="starter">
+            <div class="section__head">
+                <div class="eyebrow">13/starter css</div>
+                <h2>Drop-in stylesheet</h2>
+                <p>Tokens for both themes, base styles, atmosphere, cursor, eyebrow, buttons, inputs, keycaps and badges. Load JetBrains Mono from Google Fonts, or self-host it for offline apps.</p>
+            </div>
+            <div class="code">
+                <div class="code__bar"><i></i><i></i><i></i><span>terminal-mono.css · 155 lines</span><button type="button" id="copy-css">copy</button></div>
+<pre class="tall"><code id="starter-css">/* Terminal Mono — starter stylesheet. See DESIGN_SYSTEM.md for usage rules. */
+
+:root {
+    --bg: #06070b;
+    --bg-elev: #0b0c12;
+    --panel: #0d0e16;
+    --surface: #c0caf507;
+    --surface-2: #c0caf50e;
+    --surface-3: #c0caf516;
+    --code-surface: #0a0c14;
+    --code-surface-header: #0f111c;
+    --bdr: #c0caf517;
+    --bdr-hi: #c0caf533;
+    --txt: #e4e8f7;
+    --txt-2: #9ba3c4;
+    --txt-3: #747b9e;
+    --txt-4: #3a4060;
+    --amber: #fbbf24;
+    --amber-fill: #fcd34d;
+    --amber-fill-hover: #fef08a;
+    --amber-fill-active: #fbbf24;
+    --on-amber: #0b0a06;
+    --amber-wash: #fbbf2412;
+    --amber-line: #fbbf2452;
+    --amber-glow: #fbbf2459;
+    --blue: #7aa2f7;
+    --cyan: #7dcfff;
+    --violet: #bb9af7;
+    --green: #9ece6a;
+    --rose: #f7768e;
+    --orange: #ff9e64;
+    --grid: #c0caf509;
+    --nav-bg: #06070bd6;
+    --scrim: #000000a6;
+    --shadow-float: 0 60px 140px -60px #000000f2;
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+    --bg: #f4f5f8;
+    --bg-elev: #fff;
+    --panel: #fff;
+    --surface: #0b0d1406;
+    --surface-2: #0b0d140d;
+    --surface-3: #0b0d1414;
+    --bdr: #0b0d141a;
+    --bdr-hi: #0b0d1438;
+    --txt: #0b0d14;
+    --txt-2: #454c5e;
+    --txt-3: #686f82;
+    --txt-4: #b3b9c6;
+    --amber: #b45309;
+    --amber-wash: #b453090f;
+    --amber-line: #b4530959;
+    --amber-glow: #b4530938;
+    --blue: #0969da;
+    --cyan: #0550ae;
+    --violet: #8250df;
+    --green: #116329;
+    --rose: #cf222e;
+    --orange: #953800;
+    --grid: #0b0d140b;
+    --nav-bg: #f4f5f8e0;
+    --scrim: #0b0d1440;
+    --shadow-float: 0 50px 100px -50px #0b0d1459;
+    color-scheme: light;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--txt);
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.6;
+    font-feature-settings: "zero" 1;
+    font-variant-ligatures: none;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+::selection { background: var(--amber-fill); color: #08080b; }
+:focus-visible { outline: 1px solid var(--amber); outline-offset: 2px; }
+button, input, select, textarea { font: inherit; color: inherit; }
+
+/* Atmosphere — place &lt;div class="atmos"&gt;&lt;div class="atmos-glow"&gt;&lt;/div&gt;&lt;div class="atmos-grid"&gt;&lt;/div&gt;&lt;/div&gt; first in &lt;body&gt; */
+.atmos { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+.atmos-glow {
+    position: absolute; inset: -30% -10% auto; height: 90vh; filter: blur(20px); opacity: .7;
+    background:
+        radial-gradient(40% 40% at 22% 30%, #fbbf2417, transparent 70%),
+        radial-gradient(40% 40% at 80% 20%, #7aa2f71a, transparent 72%);
+}
+:root[data-theme="light"] .atmos-glow { opacity: .5; }
+.atmos-grid {
+    position: absolute; inset: 0;
+    background-image: linear-gradient(var(--grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 32px 32px;
+    mask-image: radial-gradient(120% 70% at 50% 0, #000 25%, transparent 80%);
+}
+
+.cursor {
+    display: inline-block; width: .5em; height: .82em; margin-left: .1em;
+    background: var(--amber); animation: blink 1.05s step-end infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+.eyebrow {
+    font-size: 10.5px; font-weight: 600; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--txt-3);
+}
+
+.btn {
+    height: 34px; padding: 0 14px; display: inline-flex; align-items: center; gap: 8px;
+    border: 1px solid transparent; border-radius: 0; font-size: 12px; font-weight: 600;
+    cursor: pointer; transition: background-color .15s, border-color .15s, color .15s;
+}
+.btn-sm { height: 28px; padding: 0 10px; font-size: 11.5px; }
+.btn-primary { background: var(--amber-fill); color: var(--on-amber); }
+.btn-primary:hover { background: var(--amber-fill-hover); }
+.btn-primary:active { background: var(--amber-fill-active); }
+.btn-ghost { background: transparent; border-color: var(--bdr-hi); color: var(--txt); }
+.btn-ghost:hover { border-color: var(--amber-line); background: var(--amber-wash); color: var(--amber); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+
+input, select, textarea {
+    background: var(--surface); border: 1px solid var(--bdr-hi); border-radius: 0;
+    padding: 7px 10px; font-size: 12.5px;
+}
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--amber-line); background: var(--surface-2); }
+input::placeholder, textarea::placeholder { color: var(--txt-3); }
+input[type="checkbox"], input[type="range"] { accent-color: var(--amber); }
+
+kbd {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 20px; height: 20px; padding: 0 5px;
+    border: 1px solid var(--bdr-hi); border-bottom-width: 2px; background: var(--surface);
+    font-family: var(--mono); font-size: 10.5px; color: var(--txt-2);
+}
+
+.badge {
+    display: inline-flex; padding: 1px 6px; font-size: 9.5px; font-weight: 700;
+    letter-spacing: .08em; text-transform: uppercase;
+    color: var(--amber); border: 1px solid var(--amber-line); background: var(--amber-wash);
+}
+
+.panel-float { background: var(--panel); border: 1px solid var(--bdr-hi); box-shadow: var(--shadow-float); }
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+}</code></pre>
+            </div>
+        </section>
+
+        <!-- 14 -->
+        <section class="section" id="checklist">
+            <div class="section__head">
+                <div class="eyebrow">14/checklist</div>
+                <h2>Before a screen ships</h2>
+            </div>
+            <ul class="checklist">
+                <li><label for="c1"><input id="c1" type="checkbox"><span>Only tokens in component CSS; works in both themes</span></label></li>
+                <li><label for="c2"><input id="c2" type="checkbox"><span>Exactly one primary (amber) action</span></label></li>
+                <li><label for="c3"><input id="c3" type="checkbox"><span>Eyebrow labels on sections; numbered only when there are peers</span></label></li>
+                <li><label for="c4"><input id="c4" type="checkbox"><span>Hairlines instead of shadows; shadows only on floating layers</span></label></li>
+                <li><label for="c5"><input id="c5" type="checkbox"><span>Hover-only controls also show on focus and on touch</span></label></li>
+                <li><label for="c6"><input id="c6" type="checkbox"><span>Every state readable without colour</span></label></li>
+                <li><label for="c7"><input id="c7" type="checkbox"><span>Small text uses --txt-3 or brighter; --txt-4 is decorative only</span></label></li>
+                <li><label for="c8"><input id="c8" type="checkbox"><span>Keyboard path for every action; focus ring visible</span></label></li>
+                <li><label for="c9"><input id="c9" type="checkbox"><span>No horizontal scroll at 390px; 860px breakpoint behaves</span></label></li>
+                <li><label for="c10"><input id="c10" type="checkbox"><span>Reduced motion respected</span></label></li>
+            </ul>
+            <div class="footer">
+                <span>terminal mono v1 · inspired by px0.ai and the Tokyo Night palette</span>
+                <span>borrow the look, not anyone's logo, name or copy</span>
+            </div>
+        </section>
+    </main>
+</div>
+
+<div class="toast-region" id="toasts" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+    var TOKENS = [
+        ['--bg', '#06070b', '#f4f5f8', 'Page background'],
+        ['--bg-elev', '#0b0c12', '#ffffff', 'Sidebars, sticky chrome'],
+        ['--panel', '#0d0e16', '#ffffff', 'Menus, modals, toasts'],
+        ['--surface', '#c0caf507', '#0b0d1406', 'Subtle fill: inputs, cards'],
+        ['--surface-2', '#c0caf50e', '#0b0d140d', 'Hover fill, table headers'],
+        ['--surface-3', '#c0caf516', '#0b0d1414', 'Tracks, pressed'],
+        ['--bdr', '#c0caf517', '#0b0d141a', 'Default hairline'],
+        ['--bdr-hi', '#c0caf533', '#0b0d1438', 'Inputs, buttons'],
+        ['--txt', '#e4e8f7', '#0b0d14', 'Primary text'],
+        ['--txt-2', '#9ba3c4', '#454c5e', 'Secondary text'],
+        ['--txt-3', '#747b9e', '#686f82', 'Meta, labels, eyebrows'],
+        ['--txt-4', '#3a4060', '#b3b9c6', 'Placeholders, disabled'],
+        ['--amber', '#fbbf24', '#b45309', 'Accent text, active state'],
+        ['--amber-fill', '#fcd34d', '#fcd34d', 'Primary button fill'],
+        ['--on-amber', '#0b0a06', '#0b0a06', 'Text on amber fill'],
+        ['--amber-wash', '#fbbf2412', '#b453090f', 'Selected background'],
+        ['--amber-line', '#fbbf2452', '#b4530959', 'Accent borders'],
+        ['--blue', '#7aa2f7', '#0969da', 'Links, info'],
+        ['--cyan', '#7dcfff', '#0550ae', 'Secondary info'],
+        ['--violet', '#bb9af7', '#8250df', 'Notes'],
+        ['--green', '#9ece6a', '#116329', 'Success, synced'],
+        ['--rose', '#f7768e', '#cf222e', 'Errors, destructive'],
+        ['--orange', '#ff9e64', '#953800', 'Inline code, numbers'],
+        ['--grid', '#c0caf509', '#0b0d140b', 'Background grid'],
+        ['--scrim', '#000000a6', '#0b0d1440', 'Modal backdrop']
+    ];
+    var LIVE = ['--bg', '--panel', '--surface-2', '--bdr-hi', '--txt', '--txt-2', '--txt-3', '--amber', '--blue', '--green', '--rose', '--violet'];
+
+    function el(tag, attrs, text) {
+        var node = document.createElement(tag);
+        Object.keys(attrs || {}).forEach(function (key) { node.setAttribute(key, attrs[key]); });
+        if (text !== undefined) node.textContent = text;
+        return node;
+    }
+
+    function toast(message, type) {
+        var region = document.getElementById('toasts');
+        var item = el('div', { class: 'toast toast--' + (type || 'success') });
+        item.append(el('span', {}, message));
+        region.append(item);
+        setTimeout(function () { item.remove(); }, 2600);
+    }
+
+    function copy(text, label) {
+        var done = function () { toast('Copied ' + label); };
+        try {
+            navigator.clipboard.writeText(text).then(done, function () { fallback(text, label); });
+        } catch (e) {
+            fallback(text, label);
+        }
+    }
+
+    function fallback(text, label) {
+        var area = el('textarea');
+        area.value = text;
+        area.setAttribute('readonly', '');
+        area.style.position = 'fixed';
+        area.style.opacity = '0';
+        document.body.append(area);
+        area.select();
+        var ok = false;
+        try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+        area.remove();
+        toast(ok ? 'Copied ' + label : 'Copy blocked here. Select the text and copy it manually.', ok ? 'success' : 'warning');
+    }
+
+    // Token table
+    var tbody = document.getElementById('token-table');
+    TOKENS.forEach(function (t) {
+        var row = el('tr');
+        row.append(el('td', {}, t[0]));
+        [[t[1], '#06070b'], [t[2], '#f4f5f8']].forEach(function (pair) {
+            var cell = el('td');
+            var button = el('button', { class: 'hex', type: 'button', title: 'Copy ' + pair[0] });
+            var chip = el('span', { class: 'chip', style: '--c:' + pair[0] + ';--g:' + pair[1] });
+            button.append(chip, document.createTextNode(pair[0]));
+            button.addEventListener('click', function () { copy(pair[0], pair[0]); });
+            cell.append(button);
+            row.append(cell);
+        });
+        row.append(el('td', { class: 'wrap' }, t[3]));
+        tbody.append(row);
+    });
+
+    // Live swatches read from the current theme
+    var strip = document.getElementById('live-swatches');
+    function drawSwatches() {
+        strip.replaceChildren();
+        var styles = getComputedStyle(document.documentElement);
+        LIVE.forEach(function (name) {
+            var value = styles.getPropertyValue(name).trim();
+            var button = el('button', { class: 'swatch', type: 'button', title: 'Copy var(' + name + ')' });
+            var chip = el('span', { class: 'swatch__chip', style: '--c: var(' + name + ')' });
+            var label = el('span', { class: 'swatch__label' });
+            label.append(el('b', {}, name), el('span', {}, value));
+            button.append(chip, label);
+            button.addEventListener('click', function () { copy('var(' + name + ')', 'var(' + name + ')'); });
+            strip.append(button);
+        });
+    }
+
+    // Spacing ruler
+    var ruler = document.getElementById('ruler');
+    [2, 4, 6, 8, 10, 12, 14, 16, 18, 24, 32, 48, 64].forEach(function (size) {
+        var row = el('div', { class: 'ruler__row' });
+        row.append(el('span', { class: 'muted num' }, size + 'px'));
+        var bar = el('div', { class: 'ruler__bar', style: 'width:' + size * 4 + 'px;max-width:100%' });
+        row.append(bar);
+        ruler.append(row);
+    });
+
+    // Theme switch
+    var root = document.documentElement;
+    var initialTheme = root.getAttribute('data-theme');
+    function readPref() {
+        try { return localStorage.getItem('terminal-mono-theme') || (initialTheme || 'system'); } catch (e) { return initialTheme || 'system'; }
+    }
+    function applyTheme(pref) {
+        if (pref === 'system') root.removeAttribute('data-theme');
+        else root.setAttribute('data-theme', pref);
+        document.querySelectorAll('[data-theme-choice]').forEach(function (button) {
+            var active = button.getAttribute('data-theme-choice') === pref;
+            button.classList.toggle('is-active', active);
+            button.setAttribute('aria-checked', String(active));
+        });
+        drawSwatches();
+    }
+    document.querySelectorAll('[data-theme-choice]').forEach(function (button) {
+        button.addEventListener('click', function () {
+            var pref = button.getAttribute('data-theme-choice');
+            try { localStorage.setItem('terminal-mono-theme', pref); } catch (e) {}
+            applyTheme(pref);
+        });
+    });
+    applyTheme(readPref());
+    if (window.matchMedia) {
+        var query = matchMedia('(prefers-color-scheme: light)');
+        if (query.addEventListener) query.addEventListener('change', drawSwatches);
+    }
+
+    // Tabs demo
+    var tabs = document.querySelectorAll('#demo-tabs button');
+    tabs.forEach(function (tab) {
+        tab.addEventListener('click', function () {
+            tabs.forEach(function (other) { other.classList.toggle('is-active', other === tab); });
+            document.getElementById('demo-tab-panel').textContent = tab.getAttribute('data-panel');
+        });
+    });
+
+    document.getElementById('demo-review').addEventListener('click', function () {
+        toast('Opened the conflict review (demo)', 'warning');
+    });
+
+    function replay(className) {
+        var target = document.getElementById('demo-target');
+        target.classList.remove('pop', 'rise');
+        void target.offsetWidth;
+        target.classList.add(className);
+    }
+    document.getElementById('demo-pop').addEventListener('click', function () { replay('pop'); });
+    document.getElementById('demo-rise').addEventListener('click', function () { replay('rise'); });
+
+    document.getElementById('copy-css').addEventListener('click', function () {
+        copy(document.getElementById('starter-css').textContent, 'the starter stylesheet');
+    });
+
+    // Highlight the section in view in the table of contents
+    var links = document.querySelectorAll('.toc a');
+    if ('IntersectionObserver' in window) {
+        var observer = new IntersectionObserver(function (entries) {
+            entries.forEach(function (entry) {
+                if (!entry.isIntersecting) return;
+                links.forEach(function (link) {
+                    link.classList.toggle('is-active', link.getAttribute('href') === '#' + entry.target.id);
+                });
+            });
+        }, { rootMargin: '-20% 0px -70% 0px' });
+        document.querySelectorAll('main section[id]').forEach(function (section) { observer.observe(section); });
+    }
+})();
+</script>
+
+</body>
+</html>
