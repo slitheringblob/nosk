@@ -2,38 +2,40 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import TYPE_CHECKING
-
-from sqlalchemy import BigInteger, Boolean, ForeignKey, Integer, JSON, String
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import BigInteger, Boolean, ForeignKey, Index, Integer, JSON, String
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
-
-if TYPE_CHECKING:  # pragma: no cover
-    from app.models.page import Page
-    from app.models.user import User
-
-
-def current_timestamp() -> int:
-    return int(datetime.utcnow().timestamp() * 1000)
+from app.utils.time import now_ms
 
 
 class SyncOperation(Base):
+    """Append-only change log. `id` doubles as the monotonically increasing sync cursor.
+
+    `page_id` deliberately has no foreign key: the log must outlive permanently deleted pages so
+    other devices still learn about the deletion.
+    """
+
     __tablename__ = "sync_operations"
+    __table_args__ = (
+        Index("ix_sync_operation_id", "operation_id", unique=True),
+        Index("ix_sync_user_timestamp", "user_id", "timestamp"),
+        Index("ix_sync_page_version", "page_id", "page_version"),
+        Index("ix_sync_entity", "entity_type", "entity_id"),
+        Index("ix_sync_audience", "audience_user_id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    operation_id: Mapped[str] = mapped_column(String(36), unique=True, index=True)
+    operation_id: Mapped[str] = mapped_column(String(64))
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     operation_type: Mapped[str] = mapped_column(String(50))
     entity_type: Mapped[str] = mapped_column(String(50))
     entity_id: Mapped[str] = mapped_column(String(36))
-    page_id: Mapped[str] = mapped_column(ForeignKey("pages.id", ondelete="CASCADE"), index=True)
+    page_id: Mapped[str] = mapped_column(String(36), index=True)
     page_version: Mapped[int] = mapped_column(Integer)
     data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    timestamp: Mapped[int] = mapped_column(BigInteger, default=current_timestamp)
+    timestamp: Mapped[int] = mapped_column(BigInteger, default=now_ms)
     device_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     synced: Mapped[bool] = mapped_column(Boolean, default=False)
-
-    user: Mapped["User"] = relationship("User", back_populates="operations")
-    page: Mapped["Page"] = relationship("Page", back_populates="operations")
+    # Extra recipient for ops that concern a user without page access (e.g. share revoked).
+    audience_user_id: Mapped[str | None] = mapped_column(String(36), nullable=True)

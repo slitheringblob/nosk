@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sign in — nosk</title>
+    <meta name="theme-color" content="#06070b">
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap">
+    <script>
+        (function () {
+            var pref = 'system';
+            try { pref = localStorage.getItem('nosk.theme') || 'system'; } catch (e) {}
+            var dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            document.documentElement.dataset.theme = pref === 'system' ? (dark ? 'dark' : 'light') : pref;
+        })();
+    </script>
+    <link rel="stylesheet" href="css/main.css">
+    <script type="module" src="js/login.js"></script>
+</head>
+<body class="auth-page">
+    <div class="atmos" aria-hidden="true"><div class="atmos-glow"></div><div class="atmos-grid"></div></div>
+    <main class="auth">
+        <section class="auth__intro">
+            <a class="brand brand--large" href="index.html">nosk<span class="cursor" aria-hidden="true"></span></a>
+            <h1 class="hero-title hero-title--compact">Notes &amp; tasks.<br><span class="hl">Every device.</span></h1>
+            <ul class="auth__points">
+                <li><span class="eyebrow">01/</span> offline-first, real-time sync</li>
+                <li><span class="eyebrow">02/</span> 26 block types, slash commands</li>
+                <li><span class="eyebrow">03/</span> sharing, comments, version history</li>
+            </ul>
+        </section>
+
+        <section class="auth__card">
+            <div class="terminal-header"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="terminal-header__path">~/nosk/auth</span></div>
+            <div class="auth__body">
+                <div class="tabs" role="tablist">
+                    <button type="button" role="tab" data-mode="login" class="is-active">01/sign in</button>
+                    <button type="button" role="tab" data-mode="register">02/create account</button>
+                </div>
+                <div id="auth-notice" class="notice" hidden></div>
+
+                <form id="auth-form" class="form" novalidate>
+                    <label class="field"><span class="eyebrow">email</span>
+                        <input id="email" type="email" autocomplete="email" required maxlength="255"></label>
+                    <label class="field"><span class="eyebrow">password</span>
+                        <input id="password" type="password" autocomplete="current-password" required minlength="8" maxlength="100"></label>
+                    <p id="auth-error" class="form-error" role="alert"></p>
+                    <button id="auth-submit" type="submit" class="btn btn-primary btn-block">$ sign in</button>
+                    <button id="forgot" type="button" class="link-btn">forgot password?</button>
+                </form>
+
+                <form id="forgot-form" class="form" hidden>
+                    <p class="muted">We'll email you a reset link.</p>
+                    <label class="field"><span class="eyebrow">email</span>
+                        <input id="forgot-email" type="email" autocomplete="email" required></label>
+                    <button type="submit" class="btn btn-primary btn-block">$ send reset link</button>
+                    <button type="button" class="link-btn" data-back>← back to sign in</button>
+                </form>
+
+                <form id="reset-form" class="form" hidden>
+                    <p class="muted">Choose a new password. You'll be signed out everywhere else.</p>
+                    <label class="field"><span class="eyebrow">new password</span>
+                        <input id="new-password" type="password" autocomplete="new-password" required minlength="8" maxlength="100"></label>
+                    <p id="reset-error" class="form-error" role="alert"></p>
+                    <button type="submit" class="btn btn-primary btn-block">$ update password</button>
+                </form>
+            </div>
+        </section>
+    </main>
+</body>
+</html>

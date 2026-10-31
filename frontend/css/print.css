@@ -1,0 +1,17 @@
+/* "Export as PDF" prints just the page content. */
+
+@page { margin: 18mm 16mm; }
+
+body { background: #fff !important; color: #111 !important; font-size: 11pt; }
+.atmos, .sidebar, .topbar, .drawer, .toast-region, .block__gutter, .block__comment-badge,
+.block-options, .template-meta, .page-icon:empty, .editor__tail, .slot-empty, .tags-input,
+.code-toolbar button, .code-toolbar select, .markdown-toolbar, .canvas-tools, .uploader, .banner { display: none !important; }
+.app { display: block !important; }
+.editor { max-width: none; padding: 0; }
+.page-title { color: #111; }
+.page-meta, .page-header__crumb { color: #666; }
+.block { break-inside: avoid; }
+.code-container, .markdown-container { background: #f6f8fa !important; color: #111 !important; border-color: #ddd; }
+.code-preview code.hljs { color: #111; }
+a { color: #0969da; }
+.toggle-children { display: block !important; }

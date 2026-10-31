@@ -28,7 +28,12 @@ def upgrade() -> None:
     op.create_table(
         "pages",
         sa.Column("id", sa.String(length=36), primary_key=True),
-        sa.Column("user_id", sa.String(length=36), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "user_id",
+            sa.String(length=36),
+            sa.ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("title", sa.String(length=200), nullable=False),
         sa.Column("component_ids", sa.JSON(), nullable=False, server_default="[]"),
         sa.Column("created_at", sa.BigInteger(), nullable=False),
@@ -44,7 +49,12 @@ def upgrade() -> None:
     op.create_table(
         "components",
         sa.Column("id", sa.String(length=36), primary_key=True),
-        sa.Column("page_id", sa.String(length=36), sa.ForeignKey("pages.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "page_id",
+            sa.String(length=36),
+            sa.ForeignKey("pages.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("type", sa.String(length=50), nullable=False),
         sa.Column("content", sa.JSON(), nullable=False),
         sa.Column("created_at", sa.BigInteger(), nullable=False),
@@ -58,7 +68,12 @@ def upgrade() -> None:
     op.create_table(
         "user_sessions",
         sa.Column("id", sa.String(length=36), primary_key=True),
-        sa.Column("user_id", sa.String(length=36), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "user_id",
+            sa.String(length=36),
+            sa.ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("device_id", sa.String(length=100), nullable=False),
         sa.Column("device_name", sa.String(length=100), nullable=True),
         sa.Column("refresh_token_hash", sa.String(length=255), nullable=False),
@@ -70,17 +85,29 @@ def upgrade() -> None:
         sa.Column("revoked_at", sa.BigInteger(), nullable=True),
     )
     op.create_index("ix_user_sessions_user_id", "user_sessions", ["user_id"], unique=False)
-    op.create_index("uq_user_sessions_user_device", "user_sessions", ["user_id", "device_id"], unique=True)
+    op.create_index(
+        "uq_user_sessions_user_device", "user_sessions", ["user_id", "device_id"], unique=True
+    )
 
     op.create_table(
         "sync_operations",
         sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
         sa.Column("operation_id", sa.String(length=36), nullable=False),
-        sa.Column("user_id", sa.String(length=36), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "user_id",
+            sa.String(length=36),
+            sa.ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("operation_type", sa.String(length=50), nullable=False),
         sa.Column("entity_type", sa.String(length=50), nullable=False),
         sa.Column("entity_id", sa.String(length=36), nullable=False),
-        sa.Column("page_id", sa.String(length=36), sa.ForeignKey("pages.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "page_id",
+            sa.String(length=36),
+            sa.ForeignKey("pages.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("page_version", sa.Integer(), nullable=False),
         sa.Column("data", sa.JSON(), nullable=True),
         sa.Column("timestamp", sa.BigInteger(), nullable=False),
@@ -88,8 +115,12 @@ def upgrade() -> None:
         sa.Column("synced", sa.Boolean(), nullable=False, server_default=sa.false()),
     )
     op.create_index("ix_sync_operation_id", "sync_operations", ["operation_id"], unique=True)
-    op.create_index("ix_sync_user_timestamp", "sync_operations", ["user_id", "timestamp"], unique=False)
-    op.create_index("ix_sync_page_version", "sync_operations", ["page_id", "page_version"], unique=False)
+    op.create_index(
+        "ix_sync_user_timestamp", "sync_operations", ["user_id", "timestamp"], unique=False
+    )
+    op.create_index(
+        "ix_sync_page_version", "sync_operations", ["page_id", "page_version"], unique=False
+    )
 
 
 def downgrade() -> None:
