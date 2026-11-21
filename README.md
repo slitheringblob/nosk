@@ -10,12 +10,6 @@ repo you own, and Obsidian keeps working exactly as before.
 
 ![nosk showing a note with properties, a callout, tasks and code](docs/screenshot.png)
 
-## Why nosk
-
-You already sync your vault to GitHub. That repo has history, backups and access control built
-in, so it can be the backend. nosk is the missing piece: a fast reader that turns the repo into
-your notes, anywhere you have a browser.
-
 ## What it does
 
 - **Instant, and offline.** The first visit downloads your vault in seconds. After that it opens
