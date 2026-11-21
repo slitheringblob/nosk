@@ -104,6 +104,23 @@ Status colour mapping: info `--blue`, success `--green`, warning `--amber`, erro
 neutral/note `--violet`. Tinted panels use `color-mix(in srgb, <colour> 7%, transparent)` with a
 2px left border in the solid colour.
 
+### 2.4 Palettes
+
+Three palettes share every rule in this document; only the accent (and, for two of them, the
+dark base) changes. Pick one with `data-palette` on `<html>`, independent of `data-theme`.
+
+| Palette | Dark base | Accent (dark) | Accent (light) | Fill / text on fill |
+|---|---|---|---|---|
+| `amber` (default) | navy-tinted `#06070b` | `#fbbf24` | `#b45309` | `#fcd34d` / `#0b0a06` |
+| `purple` | pure black `#000`, neutral greys | `#a78bfa` | `#6d28d9` | `#b9a2fb` / `#12082a` |
+| `teal` | pure black `#000`, neutral greys | `#2dd4bf` | `#0f766e` | `#5eead4` / `#022c26` |
+
+The black base swaps the blue-tinted surfaces and text for neutral ones (`#ffffff06`–`#ffffff14`
+surfaces, `#ededed` / `#a3a3a3` / `#787878` text) so the accent is the only colour cast. The
+accent tokens keep their `--amber-*` names in every palette, so components never change. Light
+mode keeps the shared light base and swaps only the accent. Overrides are in
+`terminal-mono.css` under "Palettes".
+
 ---
 
 ## 3. Typography
@@ -339,9 +356,11 @@ animations and transitions.
 </script>
 ```
 
-5. Set `<meta name="theme-color" content="#06070b">` for mobile browser chrome.
-6. Swap any third-party stylesheet that has its own theme (syntax highlighting) when the theme
-   changes.
+5. Set `data-palette` (`amber | purple | teal`) the same way, from its own stored preference.
+6. Update `<meta name="theme-color">` to the resolved `--bg` (for example `#000` for the black
+   palettes) so mobile browser chrome matches.
+7. Code blocks sit on the dark `--code-surface` in both themes, so keep syntax highlighting on its
+   dark stylesheet in light mode too.
 
 ---
 

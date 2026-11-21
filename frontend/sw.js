@@ -1,11 +1,12 @@
 // Caches the app shell so nosk opens offline. The vault itself lives in IndexedDB, not here.
-const VERSION = 'nosk-vault-v2';
+const VERSION = 'nosk-vault-v3';
 const SHELL = [
     './',
     'index.html',
     'manifest.webmanifest',
     'assets/icon.svg',
     'css/main.css',
+    'css/palettes.css',
     'css/components.css',
     'css/picker.css',
     'css/vault.css',

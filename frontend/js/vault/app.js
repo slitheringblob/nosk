@@ -2,7 +2,7 @@
 // notes, and edits them: changes are saved on the device at once and committed to GitHub shortly
 // after (see sync.js). Design: project_plan/GIT_BACKED_PLAN.md.
 import { SidebarLayout } from '../sidebar-layout.js';
-import { theme } from '../theme.js';
+import { PALETTES, theme } from '../theme.js';
 import { confirmDialog, modal, promptDialog, showMenu, toast } from '../ui.js';
 import { el, formatRelativeTime, isEditableTarget, modKey } from '../utils.js';
 import { applyTemplate, dailyPath, detectDaily } from './daily.js';
@@ -1238,6 +1238,19 @@ class VaultApp {
                 });
                 return button;
             });
+            const paletteButtons = PALETTES.map(({ id, label, swatch }) => {
+                const button = el(
+                    'button',
+                    { type: 'button', className: theme.palette() === id ? 'is-active' : '' },
+                    el('span', { className: 'theme-swatch', style: `--swatch: ${swatch}` }),
+                    label,
+                );
+                button.addEventListener('click', () => {
+                    theme.setPalette(id);
+                    paletteButtons.forEach((b) => b.classList.toggle('is-active', b === button));
+                });
+                return button;
+            });
             const syncNow = el('button', { type: 'button', className: 'btn btn-ghost btn-sm' }, 'sync now');
             syncNow.addEventListener('click', () =>
                 this.sync.sync().then(
@@ -1357,6 +1370,8 @@ class VaultApp {
                 el('div', { className: 'modal__actions modal__actions--start' }, saveDaily),
                 el('div', { className: 'section-label eyebrow' }, 'theme'),
                 el('div', { className: 'segmented' }, ...themeButtons),
+                el('div', { className: 'section-label eyebrow' }, 'palette'),
+                el('div', { className: 'segmented' }, ...paletteButtons),
                 el('div', { className: 'section-label eyebrow' }, 'device'),
                 el(
                     'p',
