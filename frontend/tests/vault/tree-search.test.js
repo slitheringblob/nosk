@@ -1,6 +1,6 @@
 import * as markedLib from 'marked';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { parseRepo, parseRoute } from '../../js/vault/app.js';
+import { folderHref, parseRepo, parseRoute } from '../../js/vault/app.js';
 import { LinkIndex, outgoingLinks } from '../../js/vault/links.js';
 import { VaultSearch } from '../../js/vault/search.js';
 import { VaultTree, buildTree } from '../../js/vault/tree.js';
@@ -129,6 +129,9 @@ describe('app helpers', () => {
             fragment: 'Goals',
         });
         expect(parseRoute('#/tag/work')).toEqual({ name: 'tag', tag: 'work' });
+        expect(parseRoute('#/f/Projects%2FIdeas')).toEqual({ name: 'folder', path: 'Projects/Ideas' });
+        expect(folderHref('Projects/Ideas')).toBe('#/f/Projects%2FIdeas');
+        expect(folderHref('')).toBe('#/');
         expect(parseRoute('')).toEqual({ name: 'home' });
     });
 });

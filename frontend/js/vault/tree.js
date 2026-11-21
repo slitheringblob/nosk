@@ -69,6 +69,16 @@ export class VaultTree {
         this.list.querySelector('.is-active')?.scrollIntoView({ block: 'nearest' });
     }
 
+    /** Unfold a folder and everything above it (folder view). */
+    reveal(folder) {
+        this.activePath = null;
+        const parts = folder.split('/');
+        for (let i = 1; i <= parts.length; i += 1) this.open.add(parts.slice(0, i).join('/'));
+        this.saveOpen();
+        this.render();
+        this.list.querySelector(`[data-folder="${CSS.escape(folder)}"]`)?.scrollIntoView({ block: 'nearest' });
+    }
+
     saveOpen() {
         try {
             localStorage.setItem(OPEN_KEY, JSON.stringify([...this.open]));

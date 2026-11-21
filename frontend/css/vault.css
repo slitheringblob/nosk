@@ -251,3 +251,25 @@
     .palette-backdrop.is-anchored .palette { top: 64px; max-height: calc(100dvh - 96px); }
 }
 @media (hover: none) { .palette__footer { display: none; } }
+
+/* --- Top bar path -------------------------------------------------------------------------- */
+
+.topbar__nav { width: 26px; height: 26px; font-size: 18px; line-height: 1; color: var(--txt-2); }
+.topbar__nav:disabled { color: var(--txt-4); cursor: default; }
+.crumbs { display: flex; align-items: center; gap: 6px; min-width: 0; margin-left: 6px; font-size: 12px; white-space: nowrap; }
+.crumb { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--txt-3); text-decoration: none; flex: 0 1 auto; }
+a.crumb:hover { color: var(--amber); }
+.crumb--current { color: var(--txt); flex: 0 0 auto; max-width: 50vw; }
+.crumb-sep { color: var(--txt-4); flex: none; }
+.folder-list__icon { display: inline-block; width: 18px; color: var(--txt-3); }
+
+@media (max-width: 860px) {
+    .crumbs { font-size: 11.5px; gap: 4px; }
+    .crumb--current { max-width: 40vw; overflow: hidden; text-overflow: ellipsis; }
+    .crumb:not(.crumb--current):not(:first-child) { max-width: 18vw; }
+}
+@media (max-width: 520px) {
+    /* On phones only the vault, the parent folder and the current item fit. */
+    .crumbs > :nth-child(n + 2):nth-last-child(n + 5) { display: none; }
+    #nav-forward { display: none; }
+}

@@ -81,7 +81,7 @@ export function parseRepo(input) {
     return match ? { owner: match[1], repo: match[2] } : null;
 }
 
-/** #/ → home, #/n/<path>?h=<fragment> → a file, #/tag/<tag> → notes with that tag. */
+/** #/ → home, #/n/<path>?h=<fragment> → a file, #/f/<folder> → a folder, #/tag/<tag> → notes with that tag. */
 export function parseRoute(hash) {
     const route = String(hash || '').replace(/^#/, '');
     const note = route.match(/^\/n\/([^?]+)(?:\?h=(.*))?$/);
@@ -95,10 +95,22 @@ export function parseRoute(hash) {
         };
         return { name: 'note', path: decode(note[1]), fragment: note[2] ? decode(note[2]) : null };
     }
+    const folder = route.match(/^\/f\/(.+)$/);
+    if (folder) return { name: 'folder', path: safeDecode(folder[1]) };
     const tag = route.match(/^\/tag\/(.+)$/);
-    if (tag) return { name: 'tag', tag: decodeURIComponent(tag[1]) };
+    if (tag) return { name: 'tag', tag: safeDecode(tag[1]) };
     return { name: 'home' };
 }
+
+function safeDecode(value) {
+    try {
+        return decodeURIComponent(value);
+    } catch {
+        return value;
+    }
+}
+
+export const folderHref = (folder) => (folder ? `#/f/${encodeURIComponent(folder)}` : '#/');
 
 function readRecent() {
     try {
@@ -330,6 +342,8 @@ class VaultApp {
         $('open-settings').addEventListener('click', () => this.openSettings());
         $('collapse-tree').addEventListener('click', () => this.tree.collapseAll());
         $('new-note').addEventListener('click', () => this.newNote());
+        $('nav-back').addEventListener('click', () => history.back());
+        $('nav-forward').addEventListener('click', () => history.forward());
         $('open-today').addEventListener('click', () => this.openToday());
         $('sync-status').addEventListener('click', () => this.syncNow());
         window.addEventListener('hashchange', () => {
@@ -523,6 +537,7 @@ class VaultApp {
         const route = parseRoute(location.hash);
         const scroll = window.scrollY;
         if (route.name === 'note') await this.showFile(route.path, route.fragment);
+        else if (route.name === 'folder') await this.showFolder(route.path);
         else if (route.name === 'tag') await this.showTag(route.tag);
         else await this.showHome();
         if (keepScroll) window.scrollTo(0, scroll);
@@ -546,6 +561,7 @@ class VaultApp {
         this.current = null;
         this.tree.setActive(null);
         const { view } = this.beginView('');
+        this.setCrumbs('');
         const notes = this.files.filter((f) => f.kind === 'note');
         const { owner, repo, branch } = this.connection;
         const recent = readRecent().filter((path) => this.files.some((f) => f.path === path));
@@ -670,6 +686,7 @@ class VaultApp {
         this.current = null;
         this.tree.setActive(null);
         const { view, seq } = this.beginView(`#${tag}`);
+        this.setCrumbs('', { extra: `#${tag}` });
         const results = await this.search.fullText(`#${tag}`, 1000);
         if (seq !== this.renderSeq) return;
         view.append(
@@ -679,12 +696,6 @@ class VaultApp {
                 el(
                     'header',
                     { className: 'page-header' },
-                    el(
-                        'div',
-                        { className: 'eyebrow page-header__crumb' },
-                        el('span', { className: 'accent' }, '~/'),
-                        'tags',
-                    ),
                     el('h1', { className: 'page-title' }, `#${tag}`),
                     el('div', { className: 'page-meta' }, `${results.length} notes`),
                 ),
@@ -704,14 +715,107 @@ class VaultApp {
         );
     }
 
-    crumbs(path) {
-        const parts = path.split('/').slice(0, -1);
-        return el(
-            'div',
-            { className: 'eyebrow page-header__crumb' },
-            el('span', { className: 'accent' }, '~/'),
-            parts.length ? parts.join(' / ') : this.connection.repo,
+    /**
+     * Top bar path: vault › folder › … › current. Folders link to their folder view; the vault
+     * name goes home. `path` is a file or folder path ('' for home); `extra` adds a last label.
+     */
+    setCrumbs(path = '', { extra = null } = {}) {
+        const parts = path ? path.split('/') : [];
+        const items = [{ label: this.connection.repo, href: '#/' }];
+        parts.forEach((part, index) => {
+            const isLast = index === parts.length - 1;
+            items.push({
+                label: isLast && !extra ? displayName(part) : part,
+                href: folderHref(parts.slice(0, index + 1).join('/')),
+            });
+        });
+        if (extra) items.push({ label: extra });
+        const last = items.length - 1;
+        $('crumbs').replaceChildren(
+            ...items.flatMap((item, index) => {
+                const node =
+                    index === last
+                        ? el(
+                              'span',
+                              { className: 'crumb crumb--current', title: item.label, ariaCurrent: 'page' },
+                              item.label,
+                          )
+                        : el('a', { className: 'crumb', href: item.href, title: item.label }, item.label);
+                return index ? [el('span', { className: 'crumb-sep', ariaHidden: 'true' }, '/'), node] : [node];
+            }),
         );
+        this.updateHistoryButtons();
+    }
+
+    updateHistoryButtons() {
+        const nav = globalThis.navigation;
+        $('nav-back').disabled = nav ? !nav.canGoBack : false;
+        $('nav-forward').disabled = nav ? !nav.canGoForward : false;
+    }
+
+    async showFolder(folder) {
+        this.current = null;
+        this.tree.reveal(folder);
+        const { view } = this.beginView(folder.split('/').pop());
+        this.setCrumbs(folder);
+        const prefix = `${folder}/`;
+        const inside = this.files.filter((f) => f.path.startsWith(prefix) && f.kind !== 'config');
+        const subfolders = new Map();
+        const files = [];
+        for (const file of inside) {
+            const rest = file.path.slice(prefix.length);
+            if (rest.includes('/')) {
+                const name = rest.slice(0, rest.indexOf('/'));
+                subfolders.set(name, (subfolders.get(name) || 0) + 1);
+            } else files.push(file);
+        }
+        const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+        const article = el(
+            'article',
+            { className: 'editor note' },
+            el(
+                'header',
+                { className: 'page-header' },
+                el('h1', { className: 'page-title' }, folder.split('/').pop()),
+                el('div', { className: 'page-meta' }, `${inside.length} file${inside.length === 1 ? '' : 's'}`),
+            ),
+        );
+        if (!inside.length) {
+            article.append(el('div', { className: 'notice' }, 'Nothing here.'));
+        } else {
+            article.append(
+                el(
+                    'div',
+                    { className: 'home-list folder-list' },
+                    ...[...subfolders]
+                        .sort((a, b) => collator.compare(a[0], b[0]))
+                        .map(([name, count]) =>
+                            el(
+                                'a',
+                                { className: 'home-list__item', href: folderHref(`${folder}/${name}`) },
+                                el('span', {}, el('span', { className: 'folder-list__icon' }, '▸'), name),
+                                el('span', { className: 'muted' }, `${count}`),
+                            ),
+                        ),
+                    ...files
+                        .sort((a, b) => collator.compare(displayName(a.path), displayName(b.path)))
+                        .map((file) =>
+                            el(
+                                'a',
+                                { className: 'home-list__item', href: noteHref(file.path) },
+                                el(
+                                    'span',
+                                    {},
+                                    el('span', { className: 'folder-list__icon' }, file.kind === 'note' ? '•' : '◇'),
+                                    file.kind === 'note' ? displayName(file.path) : file.path.slice(prefix.length),
+                                ),
+                                el('span', { className: 'muted' }, file.dirty ? '● not synced' : ''),
+                            ),
+                        ),
+                ),
+            );
+        }
+        view.append(article);
     }
 
     async showFile(path, fragment) {
@@ -723,12 +827,12 @@ class VaultApp {
         this.current = { path, sha: file?.sha ?? null, kind, exists };
         this.tree.setActive(path);
         const { view, seq } = this.beginView(displayName(path));
+        this.setCrumbs(path);
         const article = el('article', { className: `editor note${editing ? ' is-editing' : ''}` });
         view.append(article);
         const header = el(
             'header',
             { className: 'page-header' },
-            this.crumbs(path),
             el('h1', { className: 'page-title' }, displayName(path)),
         );
         article.append(header);
