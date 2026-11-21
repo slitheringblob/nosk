@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { notePathFrom, rewriteLinks, taskLines } from '../../js/vault/app.js';
+import { folderMoves, movedPath, notePathFrom, relativePath, rewriteLinks, taskLines } from '../../js/vault/app.js';
+import { canDrop } from '../../js/vault/tree.js';
 import { applyTemplate, dailyPath, detectDaily, formatDate, patternRegExp } from '../../js/vault/daily.js';
 import { NoteEditor, continuation, toggleTaskLine } from '../../js/vault/editor.js';
 import { LinkIndex } from '../../js/vault/links.js';
@@ -127,5 +128,50 @@ describe('note operations', () => {
             'See [[Roadmap#Goals|the plan]] and ![[Roadmap]] but not [[B/Plan]] or [[Other]].',
         );
         expect(rewriteLinks('nothing here', 'Notes.md', { before, after, from: 'A/Plan.md', to: 'A/Roadmap.md' })).toBeNull();
+    });
+
+    it('keeps every kind of link working when a folder moves', () => {
+        const paths = ['Projects/Plan.md', 'Projects/img/chart.png', 'Projects/Spec.md', 'Index.md', 'Other/Plan.md'];
+        const moves = new Map(folderMoves(paths, 'Projects', 'Archive/Projects').map((m) => [m.from, m.to]));
+        expect(moves.get('Projects/img/chart.png')).toBe('Archive/Projects/img/chart.png');
+        const before = new LinkIndex(paths);
+        const after = new LinkIndex(paths.map((p) => moves.get(p) ?? p));
+        const index = [
+            '[[Projects/Plan#Goals|plan]] [[Spec]] ![[chart.png]] [[Other/Plan]]',
+            '[spec](Projects/Spec.md#top) ![c](<Projects/img/chart.png>) [web](https://x.dev/a.md)',
+        ].join('\n');
+        expect(rewriteLinks(index, 'Index.md', { before, after, moves })).toBe(
+            [
+                '[[Archive/Projects/Plan#Goals|plan]] [[Spec]] ![[chart.png]] [[Other/Plan]]',
+                '[spec](Archive/Projects/Spec.md#top) ![c](<Archive/Projects/img/chart.png>) [web](https://x.dev/a.md)',
+            ].join('\n'),
+        );
+        // A moved note linking out of the folder by relative path.
+        const spec = '[home](../Index.md) [plan](Plan.md) ![](img/chart.png)';
+        expect(rewriteLinks(spec, 'Projects/Spec.md', { before, after, moves, newPath: 'Archive/Projects/Spec.md' })).toBe(
+            '[home](../../Index.md) [plan](Plan.md) ![](img/chart.png)',
+        );
+    });
+
+    it('writes markdown links Obsidian-style', () => {
+        expect(relativePath('A/B/Note.md', 'A/C/My file.md')).toBe('../C/My file.md');
+        expect(relativePath('Note.md', 'X/Y.md')).toBe('X/Y.md');
+        const before = new LinkIndex(['Old/My note.md', 'Index.md']);
+        const after = new LinkIndex(['New/My note.md', 'Index.md']);
+        const moves = new Map([['Old/My note.md', 'New/My note.md']]);
+        expect(rewriteLinks('[n](Old/My%20note.md "title")', 'Index.md', { before, after, moves })).toBe(
+            '[n](New/My%20note.md "title")',
+        );
+    });
+
+    it('only allows drops somewhere new', () => {
+        expect(movedPath('A/Note.md', 'B')).toBe('B/Note.md');
+        expect(movedPath('A/Note.md', '')).toBe('Note.md');
+        expect(canDrop({ path: 'A/Note.md' }, 'A')).toBe(false);
+        expect(canDrop({ path: 'A/Note.md' }, '')).toBe(true);
+        expect(canDrop({ folder: 'A' }, 'A/B')).toBe(false);
+        expect(canDrop({ folder: 'A/B' }, 'A')).toBe(false);
+        expect(canDrop({ folder: 'A/B' }, '')).toBe(true);
+        expect(canDrop({ folder: 'A' }, 'AB')).toBe(true);
     });
 });

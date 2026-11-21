@@ -40,13 +40,18 @@ cd frontend && npm run vendor                                             # refr
 - **Pull** (`sync.js`): branch head → if changed, recursive tree → download only blobs whose sha
   changed. Text comes ~50 files per GraphQL request (`blobTexts`); binaries download on first
   view (`blobUrl`) and are cached by sha. The head is recorded last so interrupted pulls resume.
-- **Local edits** go to the `pending` store (`sync.saveLocal/deleteLocal/renameLocal`); the UI
+- **Local edits** go to the `pending` store (`sync.saveLocal/deleteLocal/moveLocal`); the UI
   reads `sync.files()` / `sync.text()`, which overlay pending on GitHub's copy. Never write
   `files` directly: it must always mirror GitHub.
 - **Writes** go through `GitHub.commit` (GraphQL `createCommitOnBranch`) with `expectedHead`; a
   moved branch is a 409 and nothing is written. `runPush` then pulls, rebases pending edits with
   `merge3` (overlaps: ours kept, theirs saved as a conflict copy) and retries. Never write with
   the contents API (no optimistic concurrency).
+- **Moves** (rename, drag in the tree, Move to…, folder moves) all go through `app.moveFiles`,
+  which rewrites `[[wikilinks]]` and `[markdown](links)` vault-wide (`rewriteLinks`; a link is
+  only changed when it no longer names the same file exactly, `LinkIndex.resolveStrict`) and
+  saves everything with one `sync.moveLocal`. Moved binaries are pending rows with `blobSha`
+  (no text); their bytes are sent as base64 at push. `movedFrom` only shapes the commit message.
 - Pull, push and local edits run one at a time through `sync.exclusive()`; open editors flush
   via `sync.beforeSync` before each sync.
 - **Rendering** (`render.js`): marked + extensions for Obsidian syntax, sanitized with DOMPurify,

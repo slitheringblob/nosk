@@ -11,8 +11,9 @@ repo you own, and Obsidian keeps working exactly as before.
 ## What it does
 
 - **Write anywhere.** Edit notes in markdown with list continuation, `[[link]]` suggestions and
-  a formatting bar on your phone. Tick tasks straight from reading view. Create, rename (links
-  update) and delete notes, and open today's note in your vault's own daily format.
+  a formatting bar on your phone. Tick tasks straight from reading view. Create, rename and delete
+  notes, drag files and folders around the sidebar (every link to them keeps working), and open
+  today's note in your vault's own daily format.
 - **Safe with Obsidian.** Changes are saved on your device instantly and committed to GitHub a
   few seconds later. If Obsidian changed the same note meanwhile, both edits are merged; if you
   both changed the same lines, yours is kept and theirs is saved next to it. Nothing is lost.

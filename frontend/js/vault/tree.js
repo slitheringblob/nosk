@@ -1,5 +1,7 @@
 // Folder tree of the vault for the sidebar: folders first, then files, sorted like Obsidian.
-// Typing in the filter box switches to a flat list of matching files.
+// Typing in the filter box switches to a flat list of matching files. Files and folders can be
+// dragged onto a folder (or onto a file, meaning its folder, or empty space, meaning the root);
+// `onMove(item, folder)` and `onMenu(item, row)` get { path } for a file or { folder }.
 import { el } from '../utils.js';
 import { displayName } from './links.js';
 import { noteHref } from './render.js';
@@ -40,15 +42,115 @@ function readOpen() {
     }
 }
 
+const parentOf = (path) => (path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '');
+const EXPAND_DELAY_MS = 700;
+
+/** Can `item` ({ path } or { folder }) be dropped into `target`? Not where it already is. */
+export function canDrop(item, target) {
+    if (!item || target == null) return false;
+    if (item.path) return parentOf(item.path) !== target;
+    return target !== parentOf(item.folder) && target !== item.folder && !target.startsWith(`${item.folder}/`);
+}
+
 export class VaultTree {
-    constructor({ list, filterInput }) {
+    constructor({ list, filterInput, onMove = null, onMenu = null }) {
         this.list = list;
         this.filterInput = filterInput;
+        this.onMove = onMove;
+        this.onMenu = onMenu;
         this.files = [];
         this.root = buildTree([]);
         this.activePath = null;
         this.open = readOpen();
+        this.dragging = null;
         this.filterInput?.addEventListener('input', () => this.render());
+        this.bindDrag();
+        this.list.addEventListener('contextmenu', (event) => {
+            const row = event.target.closest('.tree-file, .tree-folder');
+            if (!row || !this.onMenu) return;
+            event.preventDefault();
+            this.onMenu(this.itemOf(row), row);
+        });
+    }
+
+    itemOf(row) {
+        return row.dataset.folder != null ? { folder: row.dataset.folder } : { path: row.dataset.path };
+    }
+
+    /** The folder a drop at this element means: a folder row, a file's folder, or the root. */
+    dropTarget(element) {
+        if (this.filtering) return null;
+        const row = element.closest?.('.tree-file, .tree-folder');
+        if (!row) return '';
+        return row.dataset.folder ?? parentOf(row.dataset.path);
+    }
+
+    bindDrag() {
+        const clear = () => {
+            this.list.querySelectorAll('.is-drop-target').forEach((row) => row.classList.remove('is-drop-target'));
+            this.list.classList.remove('is-drop-root');
+        };
+        const stop = () => {
+            clearTimeout(this.expandTimer);
+            this.expandTimer = null;
+            this.expandFolder = null;
+            this.dragging = null;
+            clear();
+            this.list.querySelector('.is-dragging')?.classList.remove('is-dragging');
+        };
+        this.list.addEventListener('dragstart', (event) => {
+            const row = event.target.closest?.('.tree-file, .tree-folder');
+            if (!row || !this.onMove || this.filtering) return;
+            this.dragging = this.itemOf(row);
+            row.classList.add('is-dragging');
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('text/plain', this.dragging.path || this.dragging.folder);
+        });
+        this.list.addEventListener('dragover', (event) => {
+            if (!this.dragging) return;
+            const target = this.dropTarget(event.target);
+            clear();
+            if (!canDrop(this.dragging, target)) {
+                event.dataTransfer.dropEffect = 'none';
+                return;
+            }
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'move';
+            if (target === '') this.list.classList.add('is-drop-root');
+            else
+                this.list
+                    .querySelector(`.tree-folder[data-folder="${CSS.escape(target)}"]`)
+                    ?.classList.add('is-drop-target');
+            // Hovering a closed folder opens it, so you can drop deeper.
+            const folderRow = event.target.closest?.('.tree-folder');
+            const hover = folderRow && !this.open.has(folderRow.dataset.folder) ? folderRow.dataset.folder : null;
+            if (hover !== this.expandFolder) {
+                clearTimeout(this.expandTimer);
+                this.expandFolder = hover;
+                this.expandTimer = hover
+                    ? setTimeout(() => {
+                          if (this.dragging && this.expandFolder === hover) {
+                              this.open.add(hover);
+                              this.saveOpen();
+                              this.render();
+                          }
+                      }, EXPAND_DELAY_MS)
+                    : null;
+            }
+        });
+        this.list.addEventListener('dragleave', (event) => {
+            if (!this.list.contains(event.relatedTarget)) clear();
+        });
+        this.list.addEventListener('drop', (event) => {
+            if (!this.dragging) return;
+            event.preventDefault();
+            const item = this.dragging;
+            const target = this.dropTarget(event.target);
+            stop();
+            if (canDrop(item, target)) this.onMove?.(item, target);
+        });
+        // The dragged row may have been re-rendered away, so listen on the document.
+        document.addEventListener('dragend', stop);
     }
 
     setFiles(files) {
@@ -109,6 +211,7 @@ export class VaultTree {
                 className: `nav-page tree-file tree-file--${file.kind}${file.path === this.activePath ? ' is-active' : ''}${file.dirty ? ' is-dirty' : ''}`,
                 href: noteHref(file.path),
                 title: file.path,
+                draggable: 'true',
                 dataset: { path: file.path },
                 style: `--depth: ${depth}`,
             },
@@ -130,6 +233,7 @@ export class VaultTree {
                     className: 'tree-folder',
                     ariaExpanded: String(open),
                     title: folder.path,
+                    draggable: 'true',
                     dataset: { folder: folder.path },
                     style: `--depth: ${depth}`,
                 },
@@ -148,6 +252,7 @@ export class VaultTree {
 
     render() {
         const query = (this.filterInput?.value || '').trim().toLowerCase();
+        this.filtering = Boolean(query);
         if (!this.files.length) {
             this.list.replaceChildren(el('div', { className: 'nav-empty' }, 'Nothing synced yet'));
             return;

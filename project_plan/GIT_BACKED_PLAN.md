@@ -8,7 +8,7 @@
 |---|---|---|
 | 1. Read-only vault | done | Tested against the real vault: 394 notes render with no errors; first download 7 s / 13 requests; reopen costs 1 request; offline reload works |
 | Write primitive | done | `GitHub.commit` via `createCommitOnBranch`. Real test commit `95c125d` added `nosk/Sample note from nosk.md`; a commit against a stale head was refused (409) and wrote nothing |
-| 2. Editing | done | Markdown source editor (not blocks, see below), tickable tasks, new / rename (rewrites links) / delete, pending edits pushed after 15 s idle, on hide or Ctrl+S |
+| 2. Editing | done | Markdown source editor (not blocks, see below), tickable tasks, new / rename / move files and folders (drag in the tree or Move to…; rewrites wikilinks and markdown links) / delete, pending edits pushed after 15 s idle, on hide or Ctrl+S |
 | 3. Merging | done | Line-based diff3 on pull and on a refused push; overlapping edits keep ours and save theirs as a conflict copy. Verified on the real vault with simulated Obsidian commits |
 | 4. Journal, templates, history | journal done | Daily notes follow the vault's format (detected); templates and history not started |
 | 5. Polish | not started | Attachment upload, QR token transfer, remove the backend |

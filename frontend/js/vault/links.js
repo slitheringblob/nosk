@@ -96,6 +96,20 @@ export class LinkIndex {
         );
     }
 
+    /**
+     * Like resolveWikilink / resolveHref, but a link with a folder in it only counts when it names
+     * the file exactly (no matching on the end of a path). Used to decide if a link needs fixing.
+     */
+    resolveStrict(target, fromPath, { markdown = false } = {}) {
+        const raw = markdown ? safeDecode(target) : target.trim();
+        if (!raw.includes('/'))
+            return markdown ? this.resolveHref(target, fromPath) : this.resolveWikilink(raw, fromPath);
+        if (!markdown || raw.startsWith('/')) return this.lookup(normalize(raw));
+        const relative = this.lookup(normalize(`${dirOf(fromPath || '')}/${raw}`));
+        // "Folder/Note.md" may be vault-absolute (an Obsidian setting); "../Note.md" never is.
+        return relative || (raw.startsWith('.') ? null : this.lookup(normalize(raw)));
+    }
+
     /** Markdown link href ([text](href)) to a vault path, or null for external links. */
     resolveHref(href, fromPath) {
         if (!href || /^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('#')) return null;

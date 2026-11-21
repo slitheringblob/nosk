@@ -42,18 +42,87 @@ export function taskLines(text) {
     return lines;
 }
 
-/** Point [[links]] at `to` in a note, for links that resolved to `from` before a rename. */
-export function rewriteLinks(text, notePath, { before, after, from, to }) {
-    const bare = displayName(to);
-    const target = after.resolveWikilink(bare, notePath) === to ? bare : to.replace(/\.md$/i, '');
+/**
+ * Fix [[links]] and [markdown](links) in a note after files moved. `moves` maps old path → new
+ * path (or pass one `from`/`to`); `newPath` is where this note itself ends up. Only links to a
+ * moved file (or every link, if this note moved) are checked, and one is only touched when it no
+ * longer names the same file exactly; it then gets the shortest name that does, like Obsidian.
+ * Returns the new text, or null when nothing changed.
+ */
+export function rewriteLinks(text, notePath, { before, after, from, to, moves, newPath = notePath }) {
+    const moved = moves || new Map([[from, to]]);
+    const selfMoved = newPath !== notePath;
     let changed = false;
     const next = text.replace(/(!?)\[\[([^\[\]\n]+?)\]\]/g, (match, bang, inner) => {
         const { target: old, fragment, alias } = parseLinkTarget(inner);
-        if (!old || before.resolveWikilink(old, notePath) !== from) return match;
+        if (!old) return match;
+        const was = before.resolveWikilink(old, notePath);
+        if (!was || (!moved.has(was) && !selfMoved)) return match;
+        const goal = moved.get(was) ?? was;
+        if (after.resolveStrict(old, newPath) === goal) return match;
+        const bare = goal.toLowerCase().endsWith('.md') ? displayName(goal) : goal.slice(goal.lastIndexOf('/') + 1);
+        const target = after.resolveWikilink(bare, newPath) === goal ? bare : goal.replace(/\.md$/i, '');
         changed = true;
         return `${bang}[[${target}${fragment ? `#${fragment}` : ''}${alias ? `|${alias}` : ''}]]`;
     });
-    return changed ? next : null;
+    // Markdown links and images: [text](path.md#heading), ![alt](<with spaces.png>).
+    const fixed = next.replace(MD_LINK, (match, open, angled, plain, close) => {
+        const href = angled ?? plain;
+        const hash = href.indexOf('#');
+        const path = hash >= 0 ? href.slice(0, hash) : href;
+        const fragment = hash >= 0 ? href.slice(hash) : '';
+        if (!path || /^[a-z][a-z0-9+.-]*:/i.test(path)) return match;
+        const was = before.resolveHref(path, notePath);
+        if (!was || (!moved.has(was) && !selfMoved)) return match;
+        const goal = moved.get(was) ?? was;
+        if (after.resolveStrict(path, newPath, { markdown: true }) === goal) return match;
+        const relative = relativePath(newPath, goal);
+        changed = true;
+        if (angled !== undefined || /[()<>]/.test(relative)) return `${open}<${relative}${fragment}>${close}`;
+        return `${open}${relative.replace(/ /g, '%20')}${fragment}${close}`;
+    });
+    return changed ? fixed : null;
+}
+
+const MD_LINK = /(!?\[[^\]\n]*\]\()(?:<([^>\n]+)>|([^)\s]+))(\s+"[^"\n]*"\)|\))/g;
+
+/** Path to `to` written relative to the folder of note `from` (how Obsidian writes markdown links). */
+export function relativePath(from, to) {
+    const base = from.split('/').slice(0, -1);
+    const target = to.split('/');
+    let common = 0;
+    while (common < base.length && common < target.length - 1 && base[common] === target[common]) common += 1;
+    return [...base.slice(common).map(() => '..'), ...target.slice(common)].join('/');
+}
+
+const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+const parentOf = (path) => (path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '');
+
+/** A vault path for a non-note file (keeps its extension), or throw with a readable reason. */
+export function filePathFrom(input) {
+    const parts = String(input || '')
+        .trim()
+        .split('/')
+        .map((part) => part.trim())
+        .filter(Boolean);
+    if (!parts.length) throw new Error('Give the file a name.');
+    const bad = parts.find((part) => BAD_NAME.test(part) || part.startsWith('.'));
+    if (bad) throw new Error(`"${bad}" can't be used: names can't start with "." or contain * " \\ < > : | ? # ^ [ ]`);
+    return parts.join('/');
+}
+
+/** Where a file goes when dropped into `folder` ('' is the vault root). */
+export const movedPath = (path, folder) => {
+    const name = path.slice(path.lastIndexOf('/') + 1);
+    return folder ? `${folder}/${name}` : name;
+};
+
+/** [{ from, to }] for moving `folder` so it becomes `target` (its new full path). */
+export function folderMoves(paths, folder, target) {
+    const prefix = `${folder}/`;
+    return paths
+        .filter((p) => p.startsWith(prefix))
+        .map((from) => ({ from, to: `${target}/${from.slice(prefix.length)}` }));
 }
 
 /** Turn what the user typed into a vault path for a note, or throw with a readable reason. */
@@ -332,7 +401,15 @@ class VaultApp {
 
     bindUI() {
         this.bound = true;
-        this.tree = new VaultTree({ list: $('tree'), filterInput: $('tree-filter') });
+        this.tree = new VaultTree({
+            list: $('tree'),
+            filterInput: $('tree-filter'),
+            onMove: (item, target) =>
+                item.folder
+                    ? this.moveFolder(item.folder, movedPath(item.folder, target))
+                    : this.moveFiles([{ from: item.path, to: movedPath(item.path, target) }]),
+            onMenu: (item, row) => showMenu(row, item.folder ? this.folderMenu(item.folder) : this.fileMenu(item.path)),
+        });
         this.layout = new SidebarLayout({ app: $('app'), resizer: $('sidebar-resizer') });
         $('toggle-sidebar').addEventListener('click', () => this.layout.toggle());
         $('close-sidebar').addEventListener('click', () => this.layout.toggle());
@@ -769,7 +846,6 @@ class VaultApp {
                 subfolders.set(name, (subfolders.get(name) || 0) + 1);
             } else files.push(file);
         }
-        const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
         const article = el(
             'article',
             { className: 'editor note' },
@@ -778,6 +854,7 @@ class VaultApp {
                 { className: 'page-header' },
                 el('h1', { className: 'page-title' }, folder.split('/').pop()),
                 el('div', { className: 'page-meta' }, `${inside.length} file${inside.length === 1 ? '' : 's'}`),
+                inside.length ? this.folderActions(folder) : null,
             ),
         );
         if (!inside.length) {
@@ -989,22 +1066,52 @@ class VaultApp {
             { type: 'button', className: 'icon-btn', ariaLabel: 'More actions', title: 'More' },
             '⋯',
         );
-        more.addEventListener('click', () => {
-            const text = kind === 'note' || kind === 'text';
-            showMenu(more, [
-                { label: 'Rename or move', icon: '✎', disabled: !text, onSelect: () => this.renameFile(path) },
-                {
-                    label: 'View on GitHub',
-                    icon: '↗',
-                    disabled: !this.current?.sha,
-                    onSelect: () => window.open(this.github.webUrl(path, this.connection.branch), '_blank', 'noopener'),
-                },
-                { separator: true },
-                { label: 'Delete', icon: '×', danger: true, onSelect: () => this.deleteFile(path) },
-            ]);
-        });
+        more.addEventListener('click', () => showMenu(more, this.fileMenu(path)));
         row.append(more);
         return row;
+    }
+
+    fileMenu(path) {
+        const file = this.files.find((f) => f.path === path);
+        return [
+            { label: 'Rename', icon: '✎', onSelect: () => this.renameFile(path) },
+            { label: 'Move to…', icon: '→', onSelect: () => this.moveTo(path) },
+            {
+                label: 'View on GitHub',
+                icon: '↗',
+                disabled: !file?.sha || file.dirty,
+                onSelect: () => window.open(this.github.webUrl(path, this.connection.branch), '_blank', 'noopener'),
+            },
+            { separator: true },
+            { label: 'Delete', icon: '×', danger: true, onSelect: () => this.deleteFile(path) },
+        ];
+    }
+
+    folderActions(folder) {
+        const more = el(
+            'button',
+            { type: 'button', className: 'icon-btn', ariaLabel: 'Folder actions', title: 'More' },
+            '⋯',
+        );
+        more.addEventListener('click', () => showMenu(more, this.folderMenu(folder)));
+        return el(
+            'div',
+            { className: 'page-meta page-actions' },
+            el(
+                'button',
+                { type: 'button', className: 'btn btn-ghost btn-sm', onclick: () => this.newNote(`${folder}/`) },
+                '+ note',
+            ),
+            more,
+        );
+    }
+
+    folderMenu(folder) {
+        return [
+            { label: 'New note here', icon: '+', onSelect: () => this.newNote(`${folder}/`) },
+            { label: 'Rename', icon: '✎', onSelect: () => this.renameFolder(folder) },
+            { label: 'Move to…', icon: '→', onSelect: () => this.moveTo({ folder }) },
+        ];
     }
 
     openEditor(article, path, text) {
@@ -1100,10 +1207,16 @@ class VaultApp {
         for (let n = 1; ; n += 1) if (!this.exists(`${stem} ${n}.md`)) return `${stem} ${n}.md`;
     }
 
-    async newNote() {
-        const folder = this.current?.path?.includes('/')
-            ? this.current.path.slice(0, this.current.path.lastIndexOf('/') + 1)
-            : '';
+    async newNote(inFolder = null) {
+        const route = parseRoute(location.hash);
+        const folder =
+            typeof inFolder === 'string'
+                ? inFolder
+                : route.name === 'folder'
+                  ? `${route.path}/`
+                  : this.current?.path?.includes('/')
+                    ? this.current.path.slice(0, this.current.path.lastIndexOf('/') + 1)
+                    : '';
         const input = await promptDialog('New note', {
             label: 'name (use / for folders)',
             value: `${folder}Untitled`,
@@ -1127,38 +1240,153 @@ class VaultApp {
     async renameFile(path) {
         const input = await promptDialog('Rename or move', {
             label: 'new name (use / for folders)',
-            value: path.replace(/\.md$/i, ''),
+            value: kindOf(path) === 'note' ? path.replace(/\.md$/i, '') : path,
             confirmLabel: 'Rename',
         });
         if (input === null) return;
         let to;
         try {
-            to = kindOf(path) === 'note' ? notePathFrom(input) : input.trim().replace(/^\/+/, '');
+            to = kindOf(path) === 'note' ? notePathFrom(input) : filePathFrom(input);
         } catch (error) {
             toast(error.message, { type: 'error' });
             return;
         }
-        if (to === path) return;
-        if (this.exists(to) && to.toLowerCase() !== path.toLowerCase()) {
-            toast(`"${to}" already exists.`, { type: 'error' });
+        await this.moveFiles([{ from: path, to }]);
+    }
+
+    /** All folders in the vault, as paths. */
+    folders() {
+        const folders = new Set();
+        for (const file of this.files) {
+            if (file.kind === 'config') continue;
+            const parts = file.path.split('/');
+            for (let i = 1; i < parts.length; i += 1) folders.add(parts.slice(0, i).join('/'));
+        }
+        return [...folders].sort((a, b) => collator.compare(a, b));
+    }
+
+    /** Ask where to move `what` (a file path, or { folder }). Typing a new name makes a folder. */
+    async moveTo(what) {
+        const folder = typeof what === 'object' ? what.folder : null;
+        const current = folder ? parentOf(folder) : parentOf(what);
+        const name = folder ? folder.split('/').pop() : displayName(what);
+        const choices = this.folders().filter((f) => !folder || (f !== folder && !f.startsWith(`${folder}/`)));
+        const go = (target) =>
+            folder
+                ? this.moveFolder(folder, target ? `${target}/${name}` : name)
+                : this.moveFiles([{ from: what, to: movedPath(what, target) }]);
+        await this.palette.open({
+            placeholder: `Move "${name}" to…`,
+            sigil: '→',
+            anchor: $('main'),
+            source: (query) => {
+                const typed = query.trim().replace(/^\/+|\/+$/g, '');
+                const q = typed.toLowerCase();
+                const items = ['', ...choices]
+                    .filter((f) => f !== current && (!q || f.toLowerCase().includes(q)))
+                    .slice(0, 50)
+                    .map((f) => ({ icon: f ? '▸' : '⌂', label: f || '/ (vault root)', run: () => go(f) }));
+                if (q && !choices.some((f) => f.toLowerCase() === q)) {
+                    let target = null;
+                    try {
+                        target = notePathFrom(typed).replace(/\.md$/i, '');
+                    } catch {
+                        target = null;
+                    }
+                    if (target)
+                        items.push({ icon: '+', label: `New folder "${target}"`, kind: 'new', run: () => go(target) });
+                }
+                return items;
+            },
+        });
+    }
+
+    async renameFolder(folder) {
+        const input = await promptDialog('Rename or move folder', {
+            label: 'new path (use / for folders)',
+            value: folder,
+            confirmLabel: 'Rename',
+        });
+        if (input === null) return;
+        let target;
+        try {
+            target = notePathFrom(input).replace(/\.md$/i, '');
+        } catch (error) {
+            toast(error.message, { type: 'error' });
             return;
         }
-        // Keep [[links]] pointing at the note, the way Obsidian does.
-        const before = this.links;
-        const after = new LinkIndex(this.files.map((f) => (f.path === path ? to : f.path)));
-        const rewrites = [];
-        if (kindOf(path) === 'note' || kindOf(path) === 'image' || kindOf(path) === 'pdf') {
-            for (const note of this.files) {
-                if (note.kind !== 'note' || note.path === path || note.text == null) continue;
-                const text = rewriteLinks(note.text, note.path, { before, after, from: path, to });
-                if (text !== null) rewrites.push({ path: note.path, text });
-            }
+        await this.moveFolder(folder, target);
+    }
+
+    async moveFolder(folder, target) {
+        if (target === folder) return;
+        if (target.toLowerCase().startsWith(`${folder.toLowerCase()}/`)) {
+            toast("A folder can't go inside itself.", { type: 'error' });
+            return;
         }
-        await this.sync.renameLocal(path, to, rewrites);
+        const moves = folderMoves(
+            this.files.map((f) => f.path),
+            folder,
+            target,
+        );
+        await this.moveFiles(moves, { folder: { from: folder, to: target } });
+    }
+
+    /**
+     * Every rename and move ends here: checks for clashes, fixes [[links]] across the vault, saves
+     * it all as one local change (pushed as one commit), and keeps the open view on the file.
+     */
+    async moveFiles(moves, { folder = null } = {}) {
+        moves = moves.filter((m) => m.from !== m.to);
+        if (!moves.length) return false;
+        if (this.editor) await this.editor.flush();
         await this.reloadFiles();
-        location.hash = noteHref(to);
-        if (rewrites.length)
-            toast(`Updated links in ${rewrites.length} note${rewrites.length === 1 ? '' : 's'}.`, { type: 'success' });
+        const leaving = new Set(moves.map((m) => m.from.toLowerCase()));
+        const clash = moves.find((m) => this.exists(m.to) && !leaving.has(m.to.toLowerCase()));
+        if (clash) {
+            toast(`"${clash.to}" already exists.`, { type: 'error' });
+            return false;
+        }
+        const map = new Map(moves.map((m) => [m.from, m.to]));
+        const before = this.links;
+        const after = new LinkIndex(this.files.map((f) => map.get(f.path) ?? f.path));
+        const rewrites = [];
+        for (const note of this.files) {
+            if (note.kind !== 'note' || note.text == null) continue;
+            const newPath = map.get(note.path) ?? note.path;
+            const text = rewriteLinks(note.text, note.path, { before, after, moves: map, newPath });
+            if (text !== null) rewrites.push({ path: newPath, text, others: !map.has(note.path) });
+        }
+        // An open editor is tied to the old path; reopen it at the new one.
+        const editing = this.editor && map.has(this.editorPath) ? map.get(this.editorPath) : null;
+        if (editing) {
+            this.editor.save.cancel();
+            this.editor = null;
+            this.editorPath = null;
+            this.editNext = editing;
+        }
+        await this.sync.moveLocal(
+            moves,
+            rewrites.map(({ path, text }) => ({ path, text })),
+        );
+        await this.reloadFiles();
+        const route = parseRoute(location.hash);
+        if (route.name === 'note' && map.has(route.path)) location.hash = noteHref(map.get(route.path));
+        else if (
+            folder &&
+            route.name === 'folder' &&
+            (route.path === folder.from || route.path.startsWith(`${folder.from}/`))
+        )
+            location.hash = folderHref(folder.to + route.path.slice(folder.from.length));
+        else await this.route({ keepScroll: true });
+        const fixed = rewrites.filter((r) => r.others).length;
+        const what = folder
+            ? `Moved "${folder.from.split('/').pop()}" (${moves.length} file${moves.length === 1 ? '' : 's'})`
+            : `Moved to ${parentOf(moves[0].to) || 'the vault root'}`;
+        toast(`${what}${fixed ? `, updated links in ${fixed} note${fixed === 1 ? '' : 's'}` : ''}.`, {
+            type: 'success',
+        });
+        return true;
     }
 
     async deleteFile(path) {

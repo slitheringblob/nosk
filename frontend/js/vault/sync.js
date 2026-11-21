@@ -76,7 +76,14 @@ export function isTracked(path) {
     return CONFIG_FILES.has(path) || !path.split('/').some((part) => part.startsWith('.'));
 }
 
-const hasText = (kind) => kind === 'note' || kind === 'text' || kind === 'config';
+function bufferToBase64(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return btoa(binary);
+}
+
+export const hasText = (kind) => kind === 'note' || kind === 'text' || kind === 'config';
 const eager = (file) => hasText(file.kind) && file.size <= EAGER_TEXT_LIMIT;
 const decoder = new TextDecoder('utf-8');
 
@@ -95,9 +102,16 @@ export function conflictPath(path, date = new Date()) {
 
 /** Commit message for a set of additions and deletions. */
 export function commitMessage(additions, deletions, existing) {
+    const moved = new Set(
+        additions.filter((a) => a.movedFrom && deletions.includes(a.movedFrom)).map((a) => a.movedFrom),
+    );
     const lines = [
-        ...additions.map((a) => `${existing.has(a.path) ? 'edit' : 'add'} ${a.path}`),
-        ...deletions.map((path) => `delete ${path}`),
+        ...additions.map((a) =>
+            moved.has(a.movedFrom)
+                ? `move ${a.movedFrom} → ${a.path}`
+                : `${existing.has(a.path) ? 'edit' : 'add'} ${a.path}`,
+        ),
+        ...deletions.filter((path) => !moved.has(path)).map((path) => `delete ${path}`),
     ];
     if (lines.length === 1) return `nosk: ${lines[0]}`;
     return `nosk: update ${lines.length} files\n\n${lines.join('\n')}`;
@@ -270,6 +284,12 @@ export class VaultSync extends Emitter {
                 else await this.store.putPending({ ...edit, baseSha: null, baseText: '' });
                 continue;
             }
+            if (edit.blobSha) {
+                // A moved binary landing where GitHub now has a file: ours wins, nothing to merge.
+                if (theirs.sha === edit.blobSha) await this.store.deletePending(edit.path);
+                else await this.store.putPending({ ...edit, baseSha: theirs.sha });
+                continue;
+            }
             const remoteText = (await this.store.getFile(edit.path))?.text ?? '';
             if (edit.text === null) {
                 // Changed on GitHub while deleted here: keep the changed version.
@@ -315,7 +335,8 @@ export class VaultSync extends Emitter {
             if (edit) await this.store.deletePending(path);
             return false;
         }
-        await this.store.putPending({ path, kind, text, baseSha, baseText, updatedAt: Date.now() });
+        const movedFrom = edit?.movedFrom;
+        await this.store.putPending({ path, kind, text, baseSha, baseText, movedFrom, updatedAt: Date.now() });
         return true;
     }
 
@@ -339,14 +360,71 @@ export class VaultSync extends Emitter {
         return this.exclusive(() => this.removeLocal(path)).then(() => this.afterLocal([path]));
     }
 
-    /** Rename or move a text file. `rewrites` ([{ path, text }]) update links in other notes. */
+    /** Rename or move one file. `rewrites` ([{ path, text }]) update links in other notes. */
     renameLocal(from, to, rewrites = []) {
+        return this.moveLocal([{ from, to }], rewrites);
+    }
+
+    /**
+     * Move several files at once (a folder move). Text files carry their current text; binaries
+     * are recorded by blob sha and their bytes are sent with the next push. `rewrites` are
+     * applied last, by their new paths, so a moved note can also get its links updated.
+     */
+    moveLocal(moves, rewrites = []) {
         return this.exclusive(async () => {
-            const text = await this.textUnlocked(from);
-            await this.writeLocal(to, text ?? '', kindOf(to));
-            await this.removeLocal(from);
+            for (const { from, to } of moves) {
+                const [file, edit] = await Promise.all([this.store.getFile(from), this.store.getPending(from)]);
+                // Moved twice before a push: still one move from where GitHub has it.
+                const origin = edit?.movedFrom ?? from;
+                const blobSha = edit ? edit.blobSha : file && !hasText(file.kind) ? file.sha : undefined;
+                if (blobSha) await this.writeBlobLocal(to, blobSha, edit?.kind || file.kind);
+                else await this.writeLocal(to, (await this.textUnlocked(from)) ?? '', kindOf(to));
+                await this.removeLocal(from);
+                const added = await this.store.getPending(to);
+                if (added && added.text !== null) await this.store.putPending({ ...added, movedFrom: origin });
+            }
             for (const rewrite of rewrites) await this.writeLocal(rewrite.path, rewrite.text, kindOf(rewrite.path));
-        }).then(() => this.afterLocal([from, to, ...rewrites.map((r) => r.path)]));
+        }).then(() => this.afterLocal([...moves.flatMap((m) => [m.from, m.to]), ...rewrites.map((r) => r.path)]));
+    }
+
+    /** A binary file at `path` with the contents of blob `sha` (a moved image or pdf). */
+    async writeBlobLocal(path, sha, kind) {
+        const [file, edit] = await Promise.all([this.store.getFile(path), this.store.getPending(path)]);
+        const baseSha = edit ? edit.baseSha : (file?.sha ?? null);
+        if (file && baseSha === file.sha && file.sha === sha) {
+            if (edit) await this.store.deletePending(path);
+            return;
+        }
+        await this.store.putPending({
+            path,
+            kind,
+            text: '',
+            blobSha: sha,
+            baseSha,
+            baseText: '',
+            updatedAt: Date.now(),
+        });
+    }
+
+    async blobAddition(edit) {
+        const buffer = await this.blobBuffer(edit.blobSha, edit.path);
+        return {
+            path: edit.path,
+            blobSha: edit.blobSha,
+            base64: bufferToBase64(buffer),
+            size: buffer.byteLength,
+            movedFrom: edit.movedFrom,
+        };
+    }
+
+    /** Bytes of a blob, from the device cache or GitHub. */
+    async blobBuffer(sha, path) {
+        let row = await this.store.getBlob(sha);
+        if (!row) {
+            row = { sha, buffer: await this.github.blob(sha), type: mimeOf(path) };
+            await this.store.putBlob(row);
+        }
+        return row.buffer;
     }
 
     async afterLocal(paths) {
@@ -390,7 +468,13 @@ export class VaultSync extends Emitter {
                 return null;
             }
             const files = new Map((await this.store.allFiles()).map((f) => [f.path, f]));
-            const additions = pending.filter((e) => e.text !== null).map((e) => ({ path: e.path, text: e.text }));
+            const additions = await Promise.all(
+                pending
+                    .filter((e) => e.text !== null)
+                    .map(async (e) =>
+                        e.blobSha ? await this.blobAddition(e) : { path: e.path, text: e.text, movedFrom: e.movedFrom },
+                    ),
+            );
             const deletions = pending.filter((e) => e.text === null && files.has(e.path)).map((e) => e.path);
             if (!additions.length && !deletions.length) {
                 await this.store.deletePending(pending.map((e) => e.path));
@@ -405,19 +489,23 @@ export class VaultSync extends Emitter {
                     branch: this.branch,
                     expectedHead,
                     message: commitMessage(additions, deletions, files),
-                    additions,
+                    additions: additions.map(({ path, text, base64 }) => (base64 ? { path, base64 } : { path, text })),
                     deletions,
                 });
                 // The commit is exactly our edits on top of the head we had, so the device's
                 // copy of GitHub becomes: what we had, plus these files.
                 const rows = await Promise.all(
-                    additions.map(async ({ path, text }) => ({
-                        path,
-                        text,
-                        sha: await gitBlobSha(text),
-                        size: new TextEncoder().encode(text).length,
-                        kind: files.get(path)?.kind || kindOf(path),
-                    })),
+                    additions.map(async ({ path, text, blobSha, size }) =>
+                        blobSha
+                            ? { path, sha: blobSha, size, kind: kindOf(path) }
+                            : {
+                                  path,
+                                  text,
+                                  sha: await gitBlobSha(text),
+                                  size: new TextEncoder().encode(text).length,
+                                  kind: files.get(path)?.kind || kindOf(path),
+                              },
+                    ),
                 );
                 await this.store.putFiles(rows);
                 if (deletions.length) await this.store.deleteFiles(deletions);
@@ -462,16 +550,13 @@ export class VaultSync extends Emitter {
 
     /** Object URL for a binary file (image, pdf), cached on the device after the first view. */
     async blobUrl(path) {
-        const file = await this.store.getFile(path);
-        if (!file) return null;
-        if (this.urls.has(file.sha)) return this.urls.get(file.sha);
-        let row = await this.store.getBlob(file.sha);
-        if (!row) {
-            row = { sha: file.sha, buffer: await this.github.blob(file.sha), type: mimeOf(path) };
-            await this.store.putBlob(row);
-        }
-        const url = URL.createObjectURL(new Blob([row.buffer], { type: row.type }));
-        this.urls.set(file.sha, url);
+        const edit = await this.store.getPending(path);
+        const sha = edit ? (edit.blobSha ?? null) : (await this.store.getFile(path))?.sha;
+        if (!sha) return null;
+        if (this.urls.has(sha)) return this.urls.get(sha);
+        const buffer = await this.blobBuffer(sha, path);
+        const url = URL.createObjectURL(new Blob([buffer], { type: mimeOf(path) }));
+        this.urls.set(sha, url);
         return url;
     }
 

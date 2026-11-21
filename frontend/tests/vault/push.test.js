@@ -30,7 +30,8 @@ function fakeRepo(initial) {
             if (repo.offline) throw new OfflineError(new Error('x'));
             if (repo.readonly) throw new GitHubError('Resource not accessible by personal access token', 403);
             if (expectedHead !== repo.head) throw new GitHubError('Expected branch to point to ...', 409);
-            for (const { path, text } of additions) repo.files[path] = text;
+            for (const { path, text, base64 } of additions)
+                repo.files[path] = text ?? new TextDecoder().decode(Uint8Array.from(atob(base64), (c) => c.charCodeAt(0)));
             for (const path of deletions) delete repo.files[path];
             repo.head = `c${(repo.n += 1)}`;
             repo.commits.push({ message, additions: additions.map((a) => a.path), deletions });
@@ -98,6 +99,35 @@ describe('local edits', () => {
         await sync.push();
         expect(repo.files).toEqual({ 'Folder/Renamed.md': 'line 1\nline 2\nline 3\n', 'Other.md': 'see [[Renamed]]\n' });
         expect(repo.commits).toHaveLength(1);
+        expect(repo.commits[0].message).toContain('move Note.md → Folder/Renamed.md');
+    });
+
+    it('moves several files, including a binary, in one commit', async () => {
+        repo.external('img/pic.png', 'PNG-BYTES');
+        await sync.pull();
+        await sync.moveLocal([
+            { from: 'Note.md', to: 'Archive/Note.md' },
+            { from: 'img/pic.png', to: 'Archive/pic.png' },
+        ]);
+        const view = new Map((await sync.files()).map((f) => [f.path, f]));
+        expect(view.get('Archive/pic.png')).toMatchObject({ kind: 'image', dirty: true });
+        expect(view.has('img/pic.png')).toBe(false);
+        await sync.push();
+        expect(repo.files['Archive/pic.png']).toBe('PNG-BYTES');
+        expect(repo.files['Archive/Note.md']).toBe('line 1\nline 2\nline 3\n');
+        expect(repo.files['img/pic.png']).toBeUndefined();
+        expect(repo.commits).toHaveLength(1);
+        expect(repo.commits[0].message).toMatch(/move img\/pic\.png → Archive\/pic\.png/);
+        // Afterwards the device's copy matches GitHub: same blob, nothing pending, a pull is a no-op.
+        expect((await store.getFile('Archive/pic.png')).sha).toBe(await gitBlobSha('PNG-BYTES'));
+        expect(sync.pendingCount).toBe(0);
+        expect((await sync.pull()).changed).toEqual([]);
+    });
+
+    it('moving a file back where it was leaves nothing to push', async () => {
+        await sync.renameLocal('Note.md', 'A/Note.md');
+        await sync.renameLocal('A/Note.md', 'Note.md');
+        expect(sync.pendingCount).toBe(0);
     });
 });
 

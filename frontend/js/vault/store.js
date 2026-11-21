@@ -121,12 +121,17 @@ export class VaultStore {
             if (edit.text === null) byPath.delete(edit.path);
             else {
                 const file = byPath.get(edit.path);
-                byPath.set(edit.path, {
-                    ...(file || { path: edit.path, sha: null, kind: edit.kind || 'note' }),
-                    text: edit.text,
-                    size: edit.text.length,
-                    dirty: true,
-                });
+                const base = file || { path: edit.path, sha: null, kind: edit.kind || 'note' };
+                // A moved binary keeps its blob; it has no text.
+                if (edit.blobSha)
+                    byPath.set(edit.path, {
+                        ...base,
+                        kind: edit.kind || base.kind,
+                        sha: edit.blobSha,
+                        text: undefined,
+                        dirty: true,
+                    });
+                else byPath.set(edit.path, { ...base, text: edit.text, size: edit.text.length, dirty: true });
             }
         }
         return [...byPath.values()];
