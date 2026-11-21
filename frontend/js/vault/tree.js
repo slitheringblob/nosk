@@ -7,7 +7,7 @@ import { noteHref } from './render.js';
 const OPEN_KEY = 'nosk.vault.open';
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
-const KIND_ICONS = { note: '·', image: '▣', pdf: '▤', text: '≡', config: '⚙', file: '◇' };
+const KIND_ICONS = { note: '•', image: '▣', pdf: '▤', text: '≡', config: '⚙', file: '◇' };
 
 export function buildTree(files) {
     const root = { name: '', path: '', folders: new Map(), files: [] };
