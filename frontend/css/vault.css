@@ -25,6 +25,12 @@
 .setup__steps a { color: var(--amber); }
 .setup__steps b { color: var(--txt-2); font-weight: 600; }
 
+/* --- Layout --------------------------------------------------------------------------------- */
+
+/* Keep the note pane in its own column: with the sidebar hidden, auto-placement would otherwise
+   drop it into the sidebar's (zero-width) column. */
+.app > .main { grid-column: 2; }
+
 /* --- Sidebar tree ---------------------------------------------------------------------------- */
 
 .tree-toolbar { display: flex; gap: 4px; align-items: center; }
@@ -229,3 +235,18 @@
     .editor-tool { min-width: 38px; height: 36px; }
     #open-today { padding: 0 8px; }
 }
+
+/* --- Search bar: floats over the note pane, not the whole window ------------------------------ */
+
+.palette-backdrop.is-anchored { display: block; padding: 0; background: color-mix(in srgb, var(--scrim) 55%, transparent); backdrop-filter: blur(2px); }
+.palette-backdrop.is-anchored .palette { position: absolute; top: 14vh; max-height: 72vh; display: flex; flex-direction: column; }
+.palette-backdrop.is-anchored .palette__list { max-height: none; flex: 1; min-height: 0; }
+.palette__snippet mark { background: color-mix(in srgb, var(--amber) 28%, transparent); color: var(--txt); padding: 0 1px; }
+.palette__item:hover { background: var(--surface-2); }
+.palette__item .palette__label { color: var(--txt); }
+
+@media (max-width: 860px) {
+    .app > .main { grid-column: 1; }
+    .palette-backdrop.is-anchored .palette { top: 64px; max-height: calc(100dvh - 96px); }
+}
+@media (hover: none) { .palette__footer { display: none; } }

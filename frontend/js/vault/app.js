@@ -1181,6 +1181,7 @@ class VaultApp {
 
     openSwitcher() {
         this.palette.open({
+            anchor: $('main'),
             placeholder: 'Open a note…',
             sigil: '>',
             source: async (query) => {
@@ -1204,6 +1205,7 @@ class VaultApp {
 
     openSearch() {
         this.palette.open({
+            anchor: $('main'),
             placeholder: 'Search all notes… (#tag to filter)',
             sigil: '?',
             debounceMs: 120,

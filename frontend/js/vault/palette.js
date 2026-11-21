@@ -1,5 +1,6 @@
 // Keyboard-driven picker used for the quick switcher and full-text search. `source(query)`
-// returns items: { icon, label, snippet (HTML), kind, hint, run }.
+// returns items: { icon, label, snippet (HTML), kind, hint, run }. With `anchor`, the bar floats
+// centred over that element (the note pane) instead of the whole window.
 import { el } from '../utils.js';
 
 export class Palette {
@@ -11,13 +12,15 @@ export class Palette {
     close() {
         this.element?.remove();
         this.element = null;
+        if (this.onResize) window.removeEventListener('resize', this.onResize);
+        this.onResize = null;
     }
 
     get isOpen() {
         return Boolean(this.element);
     }
 
-    async open({ placeholder, sigil = '>', source, debounceMs = 0, initial = '' }) {
+    async open({ placeholder, sigil = '>', source, debounceMs = 0, initial = '', anchor = null }) {
         this.close();
         const input = el('input', { className: 'palette__input', placeholder, ariaLabel: placeholder, value: initial });
         const list = el('div', { className: 'palette__list', role: 'listbox' });
@@ -41,6 +44,17 @@ export class Palette {
         });
         document.body.append(backdrop);
         this.element = backdrop;
+        if (anchor) {
+            backdrop.classList.add('is-anchored');
+            this.onResize = () => {
+                const rect = anchor.getBoundingClientRect();
+                const width = Math.max(0, Math.min(640, rect.width - 32));
+                panel.style.width = `${width}px`;
+                panel.style.left = `${rect.left + (rect.width - width) / 2}px`;
+            };
+            this.onResize();
+            window.addEventListener('resize', this.onResize);
+        }
 
         let items = [];
         let index = 0;
