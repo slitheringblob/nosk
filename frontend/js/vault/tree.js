@@ -96,7 +96,7 @@ export class VaultTree {
         return el(
             'a',
             {
-                className: `nav-page tree-file tree-file--${file.kind}${file.path === this.activePath ? ' is-active' : ''}`,
+                className: `nav-page tree-file tree-file--${file.kind}${file.path === this.activePath ? ' is-active' : ''}${file.dirty ? ' is-dirty' : ''}`,
                 href: noteHref(file.path),
                 title: file.path,
                 dataset: { path: file.path },

@@ -172,3 +172,60 @@
     .note-body { font-size: 15px; }
     .note-body pre { font-size: 12px; }
 }
+
+/* --- Editing --------------------------------------------------------------------------------- */
+
+.page-actions { gap: 8px; margin-top: 4px; }
+.unsynced { color: var(--amber); font-size: 11px; letter-spacing: .02em; }
+.tree-file.is-dirty .nav-page__title::after { content: " ●"; color: var(--amber); font-size: 9px; vertical-align: 1px; }
+.sync-status[data-state="pending"] .sync-status__dot { background: var(--amber); }
+.sync-status[data-state="pending"] { color: var(--amber); }
+
+.note-editor-wrap { position: relative; padding-bottom: 40vh; }
+.editor-toolbar {
+    position: sticky;
+    top: 48px;
+    z-index: 5;
+    display: flex;
+    gap: 2px;
+    flex-wrap: wrap;
+    margin: 0 0 8px;
+    padding: 4px;
+    border: 1px solid var(--bdr);
+    background: color-mix(in srgb, var(--bg-elev) 92%, transparent);
+    backdrop-filter: blur(10px);
+}
+.editor-tool { min-width: 32px; height: 30px; padding: 0 8px; background: none; border: 1px solid transparent; color: var(--txt-2); font-family: var(--mono); font-size: 13px; font-weight: 600; }
+.editor-tool:hover { color: var(--amber); border-color: var(--bdr-hi); }
+.note-editor {
+    display: block;
+    width: 100%;
+    min-height: 50vh;
+    padding: 4px 0;
+    border: 0;
+    outline: none;
+    resize: none;
+    overflow: hidden;
+    background: transparent;
+    color: var(--txt);
+    caret-color: var(--amber);
+    font-family: var(--mono);
+    font-size: 14px;
+    line-height: 1.7;
+    tab-size: 4;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+.note-editor:focus { background: transparent; border-color: transparent; }
+.link-suggest { position: absolute; z-index: 20; width: 260px; max-height: 260px; overflow-y: auto; padding: 4px 0; border: 1px solid var(--bdr-hi); background: var(--panel); box-shadow: var(--shadow-pop); }
+.link-suggest__item { display: flex; width: 100%; flex-direction: column; gap: 2px; padding: 6px 10px; background: none; border: 0; border-left: 2px solid transparent; color: var(--txt); font-size: 12.5px; text-align: left; }
+.link-suggest__item .muted { font-size: 10.5px; }
+.link-suggest__item.is-selected { background: var(--amber-wash); border-left-color: var(--amber); }
+.note-body .task input[type="checkbox"]:not(:disabled) { cursor: pointer; }
+.daily-settings { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+@media (max-width: 860px) {
+    .note-editor { font-size: 15px; }
+    .editor-tool { min-width: 38px; height: 36px; }
+    #open-today { padding: 0 8px; }
+}

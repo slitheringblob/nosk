@@ -1,22 +1,74 @@
-// nosk, git-backed: the app shell. Connects to a vault repo, keeps a copy on the device, and
-// renders notes read-only (editing arrives in milestone 2 of project_plan/GIT_BACKED_PLAN.md).
+// nosk, git-backed: the app shell. Connects to a vault repo, keeps a copy on the device, renders
+// notes, and edits them: changes are saved on the device at once and committed to GitHub shortly
+// after (see sync.js). Design: project_plan/GIT_BACKED_PLAN.md.
 import { SidebarLayout } from '../sidebar-layout.js';
 import { theme } from '../theme.js';
-import { confirmDialog, modal, toast } from '../ui.js';
+import { confirmDialog, modal, promptDialog, showMenu, toast } from '../ui.js';
 import { el, formatRelativeTime, isEditableTarget, modKey } from '../utils.js';
+import { applyTemplate, dailyPath, detectDaily } from './daily.js';
+import { NoteEditor, toggleTaskLine } from './editor.js';
 import { GitHub, GitHubError, OfflineError } from './github.js';
-import { LinkIndex, displayName, outgoingLinks } from './links.js';
+import { LinkIndex, displayName, outgoingLinks, parseLinkTarget } from './links.js';
 import { Palette } from './palette.js';
 import { hydrate, noteHref, noteTags, renderNote } from './render.js';
 import { VaultSearch } from './search.js';
 import { VaultStore } from './store.js';
-import { VaultSync } from './sync.js';
+import { VaultSync, kindOf } from './sync.js';
 import { VaultTree } from './tree.js';
 
 const $ = (id) => document.getElementById(id);
 const RECENT_KEY = 'nosk.vault.recent';
 const TOKEN_URL = 'https://github.com/settings/personal-access-tokens/new';
 const KIND_LABELS = { canvas: 'Obsidian canvas', excalidraw: 'Excalidraw drawing', base: 'Obsidian base' };
+// Characters Obsidian won't put in a file name (plus ones that break [[links]]).
+const BAD_NAME = /[*"\\<>:|?#^[\]]/;
+const TASK_LINE = /^[\s>]*(?:[-*+]|\d+[.)])\s+\[[^\]]\]/;
+
+/** Line numbers of task items ("- [ ] ...", also inside quotes/callouts), skipping code blocks. */
+export function taskLines(text) {
+    const lines = [];
+    let fence = null;
+    String(text)
+        .split('\n')
+        .forEach((line, index) => {
+            const marker = line.match(/^\s*(```|~~~)/);
+            if (marker) {
+                if (!fence) fence = marker[1];
+                else if (marker[1] === fence) fence = null;
+                return;
+            }
+            if (!fence && TASK_LINE.test(line)) lines.push(index);
+        });
+    return lines;
+}
+
+/** Point [[links]] at `to` in a note, for links that resolved to `from` before a rename. */
+export function rewriteLinks(text, notePath, { before, after, from, to }) {
+    const bare = displayName(to);
+    const target = after.resolveWikilink(bare, notePath) === to ? bare : to.replace(/\.md$/i, '');
+    let changed = false;
+    const next = text.replace(/(!?)\[\[([^\[\]\n]+?)\]\]/g, (match, bang, inner) => {
+        const { target: old, fragment, alias } = parseLinkTarget(inner);
+        if (!old || before.resolveWikilink(old, notePath) !== from) return match;
+        changed = true;
+        return `${bang}[[${target}${fragment ? `#${fragment}` : ''}${alias ? `|${alias}` : ''}]]`;
+    });
+    return changed ? next : null;
+}
+
+/** Turn what the user typed into a vault path for a note, or throw with a readable reason. */
+export function notePathFrom(input) {
+    const cleaned = String(input || '')
+        .trim()
+        .replace(/\.md$/i, '')
+        .split('/')
+        .map((part) => part.trim())
+        .filter(Boolean);
+    if (!cleaned.length) throw new Error('Give the note a name.');
+    const bad = cleaned.find((part) => BAD_NAME.test(part) || part.startsWith('.'));
+    if (bad) throw new Error(`"${bad}" can't be used: names can't start with "." or contain * " \\ < > : | ? # ^ [ ]`);
+    return `${cleaned.join('/')}.md`;
+}
 
 /** "owner/repo", a github.com URL or an ssh remote → { owner, repo }. */
 export function parseRepo(input) {
@@ -241,7 +293,8 @@ class VaultApp {
         this.github = new GitHub({ token, owner, repo });
         this.sync?.stop();
         this.sync = new VaultSync({ store: this.store, github: this.github, branch });
-        this.search = new VaultSearch(this.store);
+        this.search = new VaultSearch({ allFiles: () => this.sync.files() });
+        this.sync.beforeSync = () => this.editor?.flush();
         $('vault-name').textContent = `${owner}/${repo}`;
         $('vault-name').title = `${owner}/${repo} · ${branch}`;
         if (!this.bound) this.bindUI();
@@ -249,8 +302,16 @@ class VaultApp {
         this.sync.on('state', ({ state, error }) => this.showSyncState(state, error));
         this.sync.on('progress', ({ done, total }) => this.showProgress(done, total));
         this.sync.on('changed', (result) => this.onChanged(result));
+        this.sync.on('local', () => this.onLocal());
+        this.sync.on('pushed', () => this.reloadFiles());
+        this.sync.on('conflict', ({ conflicts }) => this.onConflict(conflicts));
         await this.route();
         this.sync.start().catch((error) => this.onSyncError(error));
+    }
+
+    /** Sync now (pull, then push edits); errors are shown, not thrown. */
+    syncNow() {
+        return this.sync.sync().catch((error) => this.onSyncError(error));
     }
 
     bindUI() {
@@ -264,7 +325,9 @@ class VaultApp {
         $('open-search').addEventListener('click', () => this.openSearch());
         $('open-settings').addEventListener('click', () => this.openSettings());
         $('collapse-tree').addEventListener('click', () => this.tree.collapseAll());
-        $('sync-status').addEventListener('click', () => this.sync.pull().catch((error) => this.onSyncError(error)));
+        $('new-note').addEventListener('click', () => this.newNote());
+        $('open-today').addEventListener('click', () => this.openToday());
+        $('sync-status').addEventListener('click', () => this.syncNow());
         window.addEventListener('hashchange', () => {
             $('app').classList.remove('sidebar-open');
             this.route();
@@ -280,6 +343,19 @@ class VaultApp {
             } else if (modKey(event) && event.key === '\\') {
                 event.preventDefault();
                 this.layout.toggle();
+            } else if (modKey(event) && key === 'e' && this.current?.kind === 'note') {
+                event.preventDefault();
+                this.toggleEdit();
+            } else if (modKey(event) && key === 's') {
+                event.preventDefault();
+                this.editor?.flush();
+                this.syncNow();
+            } else if (event.altKey && key === 'n') {
+                event.preventDefault();
+                this.newNote();
+            } else if (event.altKey && key === 'd') {
+                event.preventDefault();
+                this.openToday();
             } else if (event.key === '/' && !isEditableTarget(event.target) && !this.palette.isOpen) {
                 event.preventDefault();
                 this.openSearch();
@@ -288,24 +364,101 @@ class VaultApp {
     }
 
     async reloadFiles() {
-        this.files = await this.store.allFiles();
+        this.files = await this.sync.files();
+        this.pendingKey = this.files
+            .filter((f) => f.dirty)
+            .map((f) => f.path)
+            .join('|');
         this.links.update(this.files.map((f) => f.path));
         this.search.invalidate();
         this.tree.setFiles(this.files);
         if (this.current?.path) this.tree.setActive(this.current.path);
+        this.showDirtyMarker();
     }
 
-    async onChanged({ changed, removed }) {
+    /** Keep the "not synced yet" label under the title in step with the open note. */
+    showDirtyMarker() {
+        const row = document.querySelector('#view .page-actions');
+        if (!row || !this.current?.path) return;
+        const dirty = this.files.some((f) => f.path === this.current.path && f.dirty);
+        const marker = row.querySelector('.unsynced');
+        if (dirty && !marker) row.insertBefore(this.unsyncedLabel(), row.querySelector('.icon-btn'));
+        else if (!dirty && marker) marker.remove();
+    }
+
+    unsyncedLabel() {
+        return el(
+            'span',
+            { className: 'unsynced', title: 'Saved on this device; not on GitHub yet' },
+            '● not synced yet',
+        );
+    }
+
+    async onChanged({ changed, removed, merged = [] }) {
         await this.reloadFiles();
-        const touched = new Set([...changed, ...removed]);
+        const touched = new Set([...changed, ...removed, ...merged]);
         const route = parseRoute(location.hash);
+        // While editing, bring merged/remote changes into the editor instead of re-rendering.
+        if (this.editor && route.name === 'note' && route.path === this.editorPath) {
+            if (touched.has(route.path)) {
+                const text = await this.sync.text(route.path);
+                if (text != null && !this.editor.dirty) this.editor.setValue(text);
+            }
+            return;
+        }
         // Re-render what's on screen if it changed, or if the first download just finished.
         if (route.name !== 'note' || touched.has(route.path) || !this.current?.sha)
             await this.route({ keepScroll: true });
     }
 
+    /** A local edit was saved: refresh the tree only when the set of edited files changed. */
+    async onLocal() {
+        const pending = (await this.store.allPending()).map((e) => `${e.path}${e.text === null ? ':x' : ''}`);
+        const files = await this.sync.files();
+        const key = files
+            .filter((f) => f.dirty)
+            .map((f) => f.path)
+            .join('|');
+        const shape = `${key}#${files.length}#${pending.join('|')}`;
+        if (shape === this.localShape) {
+            this.showDirtyMarker();
+            return;
+        }
+        this.localShape = shape;
+        await this.reloadFiles();
+    }
+
+    onConflict(conflicts) {
+        for (const conflict of conflicts) {
+            const name = displayName(conflict.path);
+            if (conflict.kept === 'remote') {
+                toast(`"${name}" was changed on another device, so it wasn't deleted.`, {
+                    type: 'warning',
+                    timeout: 8000,
+                });
+                continue;
+            }
+            toast(
+                `"${name}" was also changed elsewhere. Kept your version; the other one is saved as "${displayName(conflict.copy)}".`,
+                {
+                    type: 'warning',
+                    timeout: 12_000,
+                    action: { label: 'open it', onSelect: () => (location.hash = noteHref(conflict.copy)) },
+                },
+            );
+        }
+    }
+
     onSyncError(error) {
         if (error instanceof OfflineError) return;
+        if (error instanceof GitHubError && this.sync.state === 'readonly') {
+            toast("Your edits are saved on this device, but the token can't write to the repo.", {
+                type: 'error',
+                timeout: 12_000,
+                action: { label: 'change token', onSelect: () => this.reconnect() },
+            });
+            return;
+        }
         if (error instanceof GitHubError && error.status === 401) {
             toast('GitHub no longer accepts the saved token.', {
                 type: 'error',
@@ -324,16 +477,30 @@ class VaultApp {
 
     showSyncState(state, error) {
         const pill = $('sync-status');
-        pill.dataset.state = state === 'auth' ? 'error' : state;
+        const pending = this.sync.pendingCount;
+        pill.dataset.state = state === 'auth' || state === 'readonly' ? 'error' : state;
         const label = pill.querySelector('.sync-status__label');
-        const labels = { idle: 'synced', syncing: 'syncing', offline: 'offline', auth: 'token?', error: 'error' };
+        const labels = {
+            idle: 'synced',
+            pending: `${pending} to sync`,
+            syncing: 'syncing',
+            offline: pending ? `offline · ${pending}` : 'offline',
+            auth: 'token?',
+            readonly: 'read-only',
+            error: 'error',
+        };
         label.textContent = labels[state] || state;
+        const saved = pending ? `${pending} change${pending === 1 ? '' : 's'} saved on this device. ` : '';
         pill.title =
-            state === 'error' || state === 'auth'
-                ? error?.message || 'Sync failed'
-                : this.sync.lastPull
-                  ? `Checked GitHub ${formatRelativeTime(this.sync.lastPull)}. Click to check now.`
-                  : 'Click to check GitHub now';
+            state === 'error' || state === 'auth' || state === 'readonly'
+                ? `${saved}${error?.message || 'Sync failed'}`
+                : state === 'pending'
+                  ? `${saved}Committing to GitHub shortly. Click to sync now.`
+                  : state === 'offline'
+                    ? `${saved}Offline; will sync when you're back online.`
+                    : this.sync.lastPull
+                      ? `Checked GitHub ${formatRelativeTime(this.sync.lastPull)}. Click to sync now.`
+                      : 'Click to sync now';
     }
 
     showProgress(done, total) {
@@ -359,6 +526,11 @@ class VaultApp {
 
     beginView(title) {
         this.renderSeq += 1;
+        if (this.editor) {
+            this.editor.flush();
+            this.editor = null;
+            this.editorPath = null;
+        }
         document.title = title ? `${title} · nosk` : 'nosk';
         const view = $('view');
         view.replaceChildren();
@@ -425,14 +597,24 @@ class VaultApp {
                 { className: 'hero-actions' },
                 el(
                     'button',
-                    { type: 'button', className: 'btn btn-primary', onclick: () => this.openSwitcher() },
+                    { type: 'button', className: 'btn btn-primary', onclick: () => this.openToday() },
+                    "today's note",
+                ),
+                el(
+                    'button',
+                    { type: 'button', className: 'btn btn-ghost', onclick: () => this.newNote() },
+                    '+ new note',
+                ),
+                el(
+                    'button',
+                    { type: 'button', className: 'btn btn-ghost', onclick: () => this.openSwitcher() },
                     'open a note ',
                     el('kbd', { dataset: { kbdMod: '' } }, '⌘K'),
                 ),
                 el(
                     'button',
                     { type: 'button', className: 'btn btn-ghost', onclick: () => this.openSearch() },
-                    'search everything ',
+                    'search ',
                     el('kbd', {}, '/'),
                 ),
             ),
@@ -529,20 +711,25 @@ class VaultApp {
     }
 
     async showFile(path, fragment) {
-        const file = await this.store.getFile(path);
-        this.current = { path, sha: file?.sha };
+        const [file, edit] = await Promise.all([this.store.getFile(path), this.store.getPending(path)]);
+        const exists = edit ? edit.text !== null : Boolean(file);
+        const kind = file?.kind || edit?.kind || kindOf(path);
+        const editing = kind === 'note' && exists && this.editNext === path;
+        this.editNext = null;
+        this.current = { path, sha: file?.sha ?? null, kind, exists };
         this.tree.setActive(path);
         const { view, seq } = this.beginView(displayName(path));
-        const article = el('article', { className: 'editor note' });
+        const article = el('article', { className: `editor note${editing ? ' is-editing' : ''}` });
         view.append(article);
-        if (!file) {
+        const header = el(
+            'header',
+            { className: 'page-header' },
+            this.crumbs(path),
+            el('h1', { className: 'page-title' }, displayName(path)),
+        );
+        article.append(header);
+        if (!exists) {
             article.append(
-                el(
-                    'header',
-                    { className: 'page-header' },
-                    this.crumbs(path),
-                    el('h1', { className: 'page-title' }, displayName(path)),
-                ),
                 el(
                     'div',
                     { className: 'notice' },
@@ -554,28 +741,12 @@ class VaultApp {
             return;
         }
         pushRecent(path);
-        const github = el(
-            'a',
-            {
-                className: 'link-btn',
-                href: this.github.webUrl(path, this.connection.branch),
-                target: '_blank',
-                rel: 'noopener noreferrer',
-            },
-            'view on github ↗',
-        );
-        const header = el(
-            'header',
-            { className: 'page-header' },
-            this.crumbs(path),
-            el('h1', { className: 'page-title' }, displayName(path)),
-        );
-        article.append(header);
-
-        if (file.kind === 'note') {
+        const actions = this.fileActions(path, kind, editing, Boolean(edit));
+        if (kind === 'note') {
             const text = await this.sync.text(path).catch(() => null);
             if (seq !== this.renderSeq) return;
             if (text == null) {
+                header.append(actions);
                 article.append(
                     el(
                         'div',
@@ -583,6 +754,11 @@ class VaultApp {
                         "This note hasn't been downloaded yet. It will load when you're online.",
                     ),
                 );
+                return;
+            }
+            if (editing) {
+                header.append(actions);
+                this.openEditor(article, path, text);
                 return;
             }
             const { html, data } = renderNote(text, { path, links: this.links });
@@ -600,31 +776,31 @@ class VaultApp {
             }
             const properties = this.propertiesTable(data, path);
             if (properties) header.append(properties);
-            header.append(el('div', { className: 'page-meta' }, github));
+            header.append(actions);
             const body = el('div', { className: 'note-body rendered', innerHTML: html });
             // Many notes open with "# <file name>"; the page title already says that.
             const first = body.firstElementChild;
             if (first?.tagName === 'H1' && first.textContent.trim() === displayName(path).trim()) first.remove();
+            if (!text.trim())
+                body.append(el('p', { className: 'muted' }, 'Empty note. Press edit (or Ctrl/⌘+E) to write.'));
+            // Double-click (or double-tap) the text to start editing.
+            body.addEventListener('dblclick', (event) => {
+                if (!event.target.closest('a, input, summary, img')) this.toggleEdit();
+            });
             article.append(body);
             await hydrate(body, { path, links: this.links, sync: this.sync });
             if (seq !== this.renderSeq) return;
+            this.wireTasks(body, path, text);
             this.scrollToFragment(body, fragment);
             this.showBacklinks(article, path, seq);
             return;
         }
 
-        header.append(
-            el(
-                'div',
-                { className: 'page-meta' },
-                `${file.path.split('.').pop()} · ${Math.max(1, Math.round(file.size / 1024))} KB · `,
-                github,
-            ),
-        );
-        if (file.kind === 'image' || file.kind === 'pdf') {
+        header.append(actions);
+        if (file && (kind === 'image' || kind === 'pdf')) {
             const holder = el(
                 'div',
-                { className: `file-view file-view--${file.kind}` },
+                { className: `file-view file-view--${kind}` },
                 el('div', { className: 'muted' }, 'loading…'),
             );
             article.append(holder);
@@ -632,7 +808,7 @@ class VaultApp {
                 const url = await this.sync.blobUrl(path);
                 if (seq !== this.renderSeq) return;
                 holder.replaceChildren(
-                    file.kind === 'image'
+                    kind === 'image'
                         ? el('img', { src: url, alt: displayName(path) })
                         : el('iframe', { src: url, title: displayName(path) }),
                     el(
@@ -657,11 +833,11 @@ class VaultApp {
             }
             return;
         }
-        if (file.kind === 'text') {
+        if (kind === 'text') {
             const ext = path.split('.').pop().toLowerCase();
             const text = await this.sync.text(path).catch(() => null);
             if (seq !== this.renderSeq) return;
-            if (KIND_LABELS[ext])
+            if (KIND_LABELS[ext]) {
                 article.append(
                     el(
                         'div',
@@ -669,8 +845,8 @@ class VaultApp {
                         `${KIND_LABELS[ext]}: open it in Obsidian to see it drawn. The raw file is below.`,
                     ),
                 );
-            const code = el('code', {}, text ?? '');
-            article.append(el('pre', { className: 'file-source' }, code));
+            }
+            article.append(el('pre', { className: 'file-source' }, el('code', {}, text ?? '')));
             return;
         }
         article.append(
@@ -680,6 +856,261 @@ class VaultApp {
                 "nosk can't show this kind of file. Download it from GitHub to open it.",
             ),
         );
+    }
+
+    /** The row under a file's title: edit/done, unsynced marker and the ⋯ menu. */
+    fileActions(path, kind, editing, dirty) {
+        const row = el('div', { className: 'page-meta page-actions' });
+        if (kind === 'note') {
+            row.append(
+                el(
+                    'button',
+                    {
+                        type: 'button',
+                        className: `btn btn-sm ${editing ? 'btn-primary' : 'btn-ghost'}`,
+                        title: 'Ctrl/⌘+E',
+                        onclick: () => this.toggleEdit(),
+                    },
+                    editing ? 'done' : 'edit',
+                ),
+            );
+        }
+        if (dirty) row.append(this.unsyncedLabel());
+        const more = el(
+            'button',
+            { type: 'button', className: 'icon-btn', ariaLabel: 'More actions', title: 'More' },
+            '⋯',
+        );
+        more.addEventListener('click', () => {
+            const text = kind === 'note' || kind === 'text';
+            showMenu(more, [
+                { label: 'Rename or move', icon: '✎', disabled: !text, onSelect: () => this.renameFile(path) },
+                {
+                    label: 'View on GitHub',
+                    icon: '↗',
+                    disabled: !this.current?.sha,
+                    onSelect: () => window.open(this.github.webUrl(path, this.connection.branch), '_blank', 'noopener'),
+                },
+                { separator: true },
+                { label: 'Delete', icon: '×', danger: true, onSelect: () => this.deleteFile(path) },
+            ]);
+        });
+        row.append(more);
+        return row;
+    }
+
+    openEditor(article, path, text) {
+        const editor = new NoteEditor({
+            text,
+            onChange: (value) => this.sync.saveLocal(path, value),
+            suggest: (query) => this.linkSuggestions(query, path),
+            onSave: () => this.syncNow(),
+        });
+        this.editor = editor;
+        this.editorPath = path;
+        article.append(editor.element);
+        editor.focus(!text.trim() ? false : this.focusEnd);
+        this.focusEnd = false;
+    }
+
+    toggleEdit() {
+        const path = this.current?.path;
+        if (!path || this.current.kind !== 'note') return;
+        if (this.editor && this.editorPath === path) {
+            this.editor.flush();
+            this.route({ keepScroll: false });
+        } else {
+            this.editNext = path;
+            this.route();
+        }
+    }
+
+    linkSuggestions(query, fromPath) {
+        const q = query.toLowerCase();
+        return this.files
+            .filter((f) => f.kind === 'note' && f.path !== fromPath)
+            .map((f) => {
+                const name = displayName(f.path);
+                const lower = name.toLowerCase();
+                const score = !q
+                    ? 2
+                    : lower.startsWith(q)
+                      ? 0
+                      : lower.includes(q)
+                        ? 1
+                        : f.path.toLowerCase().includes(q)
+                          ? 2
+                          : -1;
+                return { f, name, score };
+            })
+            .filter((m) => m.score >= 0)
+            .sort((a, b) => a.score - b.score || a.name.localeCompare(b.name))
+            .slice(0, 8)
+            .map(({ f, name }) => {
+                const unique = this.links.resolveWikilink(name, fromPath) === f.path;
+                return {
+                    label: name,
+                    detail: f.path.includes('/') ? f.path.slice(0, f.path.lastIndexOf('/')) : '',
+                    insert: unique ? name : f.path.replace(/\.md$/i, ''),
+                };
+            });
+    }
+
+    /** Make checkboxes in reading view tickable; each one maps to a task line in the source. */
+    wireTasks(body, path, text) {
+        const items = [...body.querySelectorAll('li.task')].filter((li) => !li.closest('.note-embed'));
+        const lines = taskLines(text);
+        if (items.length !== lines.length) return;
+        items.forEach((item, index) => {
+            const box = item.querySelector('input[type="checkbox"]');
+            if (!box) return;
+            box.disabled = false;
+            box.addEventListener('change', async () => {
+                const current = await this.sync.text(path);
+                if (current !== text) {
+                    this.route({ keepScroll: true });
+                    return;
+                }
+                const all = current.split('\n');
+                all[lines[index]] = toggleTaskLine(all[lines[index]]);
+                text = all.join('\n');
+                item.classList.toggle('is-done', box.checked);
+                await this.sync.saveLocal(path, text);
+            });
+        });
+    }
+
+    // ------------------------------------------------------------ creating, renaming, deleting
+
+    exists(path) {
+        return this.files.some((f) => f.path.toLowerCase() === path.toLowerCase());
+    }
+
+    freePath(path) {
+        if (!this.exists(path)) return path;
+        const stem = path.replace(/\.md$/i, '');
+        for (let n = 1; ; n += 1) if (!this.exists(`${stem} ${n}.md`)) return `${stem} ${n}.md`;
+    }
+
+    async newNote() {
+        const folder = this.current?.path?.includes('/')
+            ? this.current.path.slice(0, this.current.path.lastIndexOf('/') + 1)
+            : '';
+        const input = await promptDialog('New note', {
+            label: 'name (use / for folders)',
+            value: `${folder}Untitled`,
+            placeholder: 'Folder/Note name',
+            confirmLabel: 'Create',
+        });
+        if (input === null) return;
+        let path;
+        try {
+            path = this.freePath(notePathFrom(input));
+        } catch (error) {
+            toast(error.message, { type: 'error' });
+            return;
+        }
+        await this.sync.saveLocal(path, '');
+        await this.reloadFiles();
+        this.editNext = path;
+        location.hash = noteHref(path);
+    }
+
+    async renameFile(path) {
+        const input = await promptDialog('Rename or move', {
+            label: 'new name (use / for folders)',
+            value: path.replace(/\.md$/i, ''),
+            confirmLabel: 'Rename',
+        });
+        if (input === null) return;
+        let to;
+        try {
+            to = kindOf(path) === 'note' ? notePathFrom(input) : input.trim().replace(/^\/+/, '');
+        } catch (error) {
+            toast(error.message, { type: 'error' });
+            return;
+        }
+        if (to === path) return;
+        if (this.exists(to) && to.toLowerCase() !== path.toLowerCase()) {
+            toast(`"${to}" already exists.`, { type: 'error' });
+            return;
+        }
+        // Keep [[links]] pointing at the note, the way Obsidian does.
+        const before = this.links;
+        const after = new LinkIndex(this.files.map((f) => (f.path === path ? to : f.path)));
+        const rewrites = [];
+        if (kindOf(path) === 'note' || kindOf(path) === 'image' || kindOf(path) === 'pdf') {
+            for (const note of this.files) {
+                if (note.kind !== 'note' || note.path === path || note.text == null) continue;
+                const text = rewriteLinks(note.text, note.path, { before, after, from: path, to });
+                if (text !== null) rewrites.push({ path: note.path, text });
+            }
+        }
+        await this.sync.renameLocal(path, to, rewrites);
+        await this.reloadFiles();
+        location.hash = noteHref(to);
+        if (rewrites.length)
+            toast(`Updated links in ${rewrites.length} note${rewrites.length === 1 ? '' : 's'}.`, { type: 'success' });
+    }
+
+    async deleteFile(path) {
+        const ok = await confirmDialog(`Delete "${displayName(path)}"? It stays in the repo's git history.`, {
+            confirmLabel: 'Delete',
+            danger: true,
+        });
+        if (!ok) return;
+        if (this.editorPath === path) {
+            this.editor.save.cancel();
+            this.editor = null;
+            this.editorPath = null;
+        }
+        await this.sync.deleteLocal(path);
+        await this.reloadFiles();
+        location.hash = '#/';
+    }
+
+    // ------------------------------------------------------------ daily notes
+
+    async dailySettings() {
+        const saved = (await this.store.getMeta('settings')) || {};
+        if (saved.dailyFormat)
+            return {
+                folder: saved.dailyFolder || '',
+                format: saved.dailyFormat,
+                template: saved.dailyTemplate || null,
+            };
+        let config = {};
+        try {
+            config = JSON.parse((await this.sync.text('.obsidian/daily-notes.json')) || '{}');
+        } catch {
+            config = {};
+        }
+        return detectDaily(
+            this.files.map((f) => f.path),
+            config,
+        );
+    }
+
+    async openToday() {
+        const settings = await this.dailySettings();
+        const date = new Date();
+        const path = dailyPath(date, settings);
+        if (!this.exists(path)) {
+            let text = '';
+            if (settings.template) {
+                const template = await this.sync.text(
+                    settings.template.endsWith('.md') ? settings.template : `${settings.template}.md`,
+                );
+                if (template != null)
+                    text = applyTemplate(template, { date, title: displayName(path), format: settings.format });
+            }
+            await this.sync.saveLocal(path, text);
+            await this.reloadFiles();
+            this.editNext = path;
+            this.focusEnd = true;
+        }
+        location.hash = noteHref(path);
+        if (parseRoute(location.hash).path === this.current?.path) this.route();
     }
 
     propertiesTable(data, path) {
@@ -803,11 +1234,37 @@ class VaultApp {
             });
             const syncNow = el('button', { type: 'button', className: 'btn btn-ghost btn-sm' }, 'sync now');
             syncNow.addEventListener('click', () =>
-                this.sync.pull().then(
+                this.sync.sync().then(
                     () => toast('Up to date', { type: 'success' }),
                     (error) => this.onSyncError(error),
                 ),
             );
+            // Daily notes: detected from the vault, adjustable here.
+            const daily = await this.dailySettings();
+            const folderInput = el('input', { value: daily.folder, placeholder: '(vault root)', spellcheck: false });
+            const formatInput = el('input', { value: daily.format, placeholder: 'YYYY-MM-DD', spellcheck: false });
+            const preview = el('p', { className: 'muted' });
+            const showPreview = () => {
+                const path = dailyPath(new Date(), {
+                    folder: folderInput.value.trim(),
+                    format: formatInput.value.trim() || 'YYYY-MM-DD',
+                });
+                preview.textContent = `Today: ${path}`;
+            };
+            folderInput.addEventListener('input', showPreview);
+            formatInput.addEventListener('input', showPreview);
+            showPreview();
+            const saveDaily = el('button', { type: 'button', className: 'btn btn-ghost btn-sm' }, 'save');
+            saveDaily.addEventListener('click', async () => {
+                const settings = (await this.store.getMeta('settings')) || {};
+                await this.store.setMeta('settings', {
+                    ...settings,
+                    dailyFolder: folderInput.value.trim().replace(/^\/+|\/+$/g, ''),
+                    dailyFormat: formatInput.value.trim() || 'YYYY-MM-DD',
+                    dailyTemplate: daily.template,
+                });
+                toast('Daily notes updated', { type: 'success' });
+            });
             const redownload = el(
                 'button',
                 { type: 'button', className: 'btn btn-ghost btn-sm' },
@@ -829,11 +1286,15 @@ class VaultApp {
                 'disconnect this device',
             );
             disconnect.addEventListener('click', async () => {
+                const unsynced = await this.sync.countPending();
+                const warning = unsynced
+                    ? ` ${unsynced} change${unsynced === 1 ? " hasn't" : "s haven't"} reached GitHub yet and will be lost.`
+                    : ' Nothing on GitHub changes.';
                 if (
-                    !(await confirmDialog(
-                        'Remove the token and the downloaded vault from this device? Nothing on GitHub changes.',
-                        { confirmLabel: 'Disconnect', danger: true },
-                    ))
+                    !(await confirmDialog(`Remove the token and the downloaded vault from this device?${warning}`, {
+                        confirmLabel: 'Disconnect',
+                        danger: true,
+                    }))
                 )
                     return;
                 close();
@@ -874,6 +1335,20 @@ class VaultApp {
                         : null,
                 ),
                 el('div', { className: 'modal__actions modal__actions--start' }, syncNow, redownload, token),
+                el('div', { className: 'section-label eyebrow' }, 'daily notes'),
+                el(
+                    'div',
+                    { className: 'daily-settings' },
+                    el('label', { className: 'field' }, el('span', { className: 'eyebrow' }, 'folder'), folderInput),
+                    el(
+                        'label',
+                        { className: 'field' },
+                        el('span', { className: 'eyebrow' }, 'name format'),
+                        formatInput,
+                    ),
+                ),
+                preview,
+                el('div', { className: 'modal__actions modal__actions--start' }, saveDaily),
                 el('div', { className: 'section-label eyebrow' }, 'theme'),
                 el('div', { className: 'segmented' }, ...themeButtons),
                 el('div', { className: 'section-label eyebrow' }, 'device'),

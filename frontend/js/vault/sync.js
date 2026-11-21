@@ -1,6 +1,12 @@
-// Pulls the vault from GitHub into IndexedDB. A pull costs one request when nothing changed
-// (the branch head); otherwise one tree listing plus one request per changed file.
+// Keeps the device's copy of the vault and GitHub in step.
+//
+// Pull: one request when nothing changed (the branch head); otherwise a tree listing and the
+// changed files. Local edits wait in the `pending` store and are rebased onto whatever the pull
+// brought in (three-way merge). Push: all pending edits in one commit that only lands if the
+// branch is still where we last saw it; if Obsidian pushed first, pull, merge, and try again.
+// Pull, push and local edits run one at a time, so they never see each other half-done.
 import { GitHubError, OfflineError } from './github.js';
+import { gitBlobSha, merge3 } from './merge.js';
 import { Emitter } from '../utils.js';
 
 const NOTE_EXT = new Set(['md', 'markdown']);
@@ -36,6 +42,9 @@ const CONFIG_FILES = new Set(['.obsidian/app.json', '.obsidian/daily-notes.json'
 // Larger text files are downloaded when opened instead of on every pull.
 const EAGER_TEXT_LIMIT = 2 * 1024 * 1024;
 const TEXT_BATCH = 50;
+// Local edits are committed this long after the last change (or right away on hide / Ctrl+S).
+const PUSH_DELAY_MS = 15_000;
+const MAX_PUSH_ATTEMPTS = 4;
 
 export const extOf = (path) => {
     const name = path.slice(path.lastIndexOf('/') + 1);
@@ -71,6 +80,29 @@ const hasText = (kind) => kind === 'note' || kind === 'text' || kind === 'config
 const eager = (file) => hasText(file.kind) && file.size <= EAGER_TEXT_LIMIT;
 const decoder = new TextDecoder('utf-8');
 
+const dirOf = (path) => (path.includes('/') ? path.slice(0, path.lastIndexOf('/') + 1) : '');
+
+/** "Folder/Note (conflict 2026-11-21 14.05).md" next to the original. */
+export function conflictPath(path, date = new Date()) {
+    const pad = (n) => String(n).padStart(2, '0');
+    const stamp = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}.${pad(date.getMinutes())}`;
+    const name = path.slice(dirOf(path).length);
+    const dot = name.lastIndexOf('.');
+    const stem = dot > 0 ? name.slice(0, dot) : name;
+    const ext = dot > 0 ? name.slice(dot) : '';
+    return `${dirOf(path)}${stem} (conflict ${stamp})${ext}`;
+}
+
+/** Commit message for a set of additions and deletions. */
+export function commitMessage(additions, deletions, existing) {
+    const lines = [
+        ...additions.map((a) => `${existing.has(a.path) ? 'edit' : 'add'} ${a.path}`),
+        ...deletions.map((path) => `delete ${path}`),
+    ];
+    if (lines.length === 1) return `nosk: ${lines[0]}`;
+    return `nosk: update ${lines.length} files\n\n${lines.join('\n')}`;
+}
+
 async function pool(items, size, fn) {
     let next = 0;
     const workers = Array.from({ length: Math.min(size, items.length) }, async () => {
@@ -80,29 +112,66 @@ async function pool(items, size, fn) {
 }
 
 export class VaultSync extends Emitter {
-    constructor({ store, github, branch, concurrency = 6, intervalMs = 60_000 }) {
+    constructor({ store, github, branch, concurrency = 6, intervalMs = 60_000, pushDelayMs = PUSH_DELAY_MS }) {
         super();
         this.store = store;
         this.github = github;
         this.branch = branch;
         this.concurrency = concurrency;
         this.intervalMs = intervalMs;
+        this.pushDelayMs = pushDelayMs;
         this.state = 'idle';
         this.error = null;
-        this.pulling = null;
         this.lastPull = 0;
+        this.pendingCount = 0;
         this.urls = new Map();
+        this.lock = Promise.resolve();
+        this.pulling = null;
+        this.pushing = null;
+        // Called before every pull/push so open editors can save what's in them first.
+        this.beforeSync = null;
     }
 
     setState(state, error = null) {
+        if (state === 'idle' && this.pendingCount) state = 'pending';
         this.state = state;
         this.error = error;
-        this.emit('state', { state, error });
+        this.emit('state', { state, error, pending: this.pendingCount });
     }
+
+    failed(error) {
+        if (error instanceof OfflineError) this.setState('offline', error);
+        else if (error instanceof GitHubError && error.status === 401) this.setState('auth', error);
+        else if (
+            error instanceof GitHubError &&
+            error.status === 403 &&
+            !error.retryAfter &&
+            !/rate limit/i.test(error.message)
+        ) {
+            this.setState('readonly', error);
+        } else this.setState('error', error);
+    }
+
+    async countPending() {
+        this.pendingCount = (await this.store.allPending()).length;
+        return this.pendingCount;
+    }
+
+    /** Run `fn` once nothing else is reading or writing the store. */
+    exclusive(fn) {
+        const run = this.lock.then(fn, fn);
+        this.lock = run.catch(() => {});
+        return run;
+    }
+
+    // ------------------------------------------------------------ pull
 
     /** Pull now; concurrent calls share one run. */
     pull(options) {
-        this.pulling ??= this.runPull(options).finally(() => {
+        this.pulling ??= (async () => {
+            await this.beforeSync?.();
+            return this.exclusive(() => this.runPull(options));
+        })().finally(() => {
             this.pulling = null;
         });
         return this.pulling;
@@ -114,8 +183,9 @@ export class VaultSync extends Emitter {
             const head = await this.github.headCommit(this.branch);
             this.lastPull = Date.now();
             if (!force && head === (await this.store.getMeta('head'))) {
+                await this.countPending();
                 this.setState('idle');
-                return { head, changed: [], removed: [] };
+                return { head, changed: [], removed: [], merged: [], conflicts: [] };
             }
             const remote = (await this.github.listFiles(head))
                 .filter((f) => isTracked(f.path))
@@ -167,24 +237,221 @@ export class VaultSync extends Emitter {
                 await flush();
             }
             if (removed.length) await this.store.deleteFiles(removed);
+            const { merged, conflicts } = await this.rebasePending(new Map(remote.map((f) => [f.path, f])));
             // Recorded last, so an interrupted pull simply resumes where it stopped next time.
             await this.store.setMeta('head', head);
             await this.store.setMeta('pulledAt', Date.now());
+            await this.countPending();
             this.setState('idle');
-            const result = { head, changed: changed.map((f) => f.path), removed };
+            const result = { head, changed: changed.map((f) => f.path), removed, merged, conflicts };
             this.emit('changed', result);
+            if (conflicts.length) this.emit('conflict', { conflicts });
             if (removed.length) this.store.pruneBlobs().catch(() => {});
             return result;
         } catch (error) {
-            if (error instanceof OfflineError) this.setState('offline', error);
-            else if (error instanceof GitHubError && error.status === 401) this.setState('auth', error);
-            else this.setState('error', error);
+            this.failed(error);
             throw error;
         }
     }
 
-    /** Text of a file, downloading it first if it was too big to fetch during the pull. */
-    async text(path) {
+    /**
+     * Move local edits onto the versions just pulled. Changes on both sides are merged; where
+     * they overlap, the local version wins and the remote one is kept as a conflict copy.
+     */
+    async rebasePending(remote) {
+        const merged = [];
+        const conflicts = [];
+        for (const edit of await this.store.allPending()) {
+            const theirs = remote.get(edit.path);
+            if ((theirs?.sha ?? null) === edit.baseSha) continue;
+            if (!theirs) {
+                // Deleted on GitHub. A local delete agrees; a local edit brings the file back.
+                if (edit.text === null) await this.store.deletePending(edit.path);
+                else await this.store.putPending({ ...edit, baseSha: null, baseText: '' });
+                continue;
+            }
+            const remoteText = (await this.store.getFile(edit.path))?.text ?? '';
+            if (edit.text === null) {
+                // Changed on GitHub while deleted here: keep the changed version.
+                await this.store.deletePending(edit.path);
+                conflicts.push({ path: edit.path, kept: 'remote' });
+                continue;
+            }
+            const result = merge3(edit.baseText ?? '', edit.text, remoteText);
+            if (result.text === remoteText) await this.store.deletePending(edit.path);
+            else await this.store.putPending({ ...edit, text: result.text, baseSha: theirs.sha, baseText: remoteText });
+            merged.push(edit.path);
+            if (result.conflicts) {
+                const copy = conflictPath(edit.path);
+                await this.store.putPending({
+                    path: copy,
+                    kind: theirs.kind,
+                    text: remoteText,
+                    baseSha: null,
+                    baseText: '',
+                    updatedAt: Date.now(),
+                });
+                conflicts.push({ path: edit.path, copy, kept: 'local' });
+            }
+        }
+        return { merged, conflicts };
+    }
+
+    // ------------------------------------------------------------ local edits
+
+    /** Save a note's new text on the device; it's committed shortly after. */
+    saveLocal(path, text, kind = kindOf(path)) {
+        return this.exclusive(() => this.writeLocal(path, text, kind)).then(async (result) => {
+            await this.afterLocal([path]);
+            return result;
+        });
+    }
+
+    async writeLocal(path, text, kind) {
+        const [file, edit] = await Promise.all([this.store.getFile(path), this.store.getPending(path)]);
+        const baseSha = edit ? edit.baseSha : (file?.sha ?? null);
+        const baseText = edit ? edit.baseText : (file?.text ?? '');
+        if (file && baseSha === file.sha && text === file.text) {
+            if (edit) await this.store.deletePending(path);
+            return false;
+        }
+        await this.store.putPending({ path, kind, text, baseSha, baseText, updatedAt: Date.now() });
+        return true;
+    }
+
+    async removeLocal(path) {
+        const [file, edit] = await Promise.all([this.store.getFile(path), this.store.getPending(path)]);
+        if (!file) {
+            if (edit) await this.store.deletePending(path);
+            return;
+        }
+        await this.store.putPending({
+            path,
+            kind: file.kind,
+            text: null,
+            baseSha: edit ? edit.baseSha : file.sha,
+            baseText: edit ? edit.baseText : (file.text ?? ''),
+            updatedAt: Date.now(),
+        });
+    }
+
+    deleteLocal(path) {
+        return this.exclusive(() => this.removeLocal(path)).then(() => this.afterLocal([path]));
+    }
+
+    /** Rename or move a text file. `rewrites` ([{ path, text }]) update links in other notes. */
+    renameLocal(from, to, rewrites = []) {
+        return this.exclusive(async () => {
+            const text = await this.textUnlocked(from);
+            await this.writeLocal(to, text ?? '', kindOf(to));
+            await this.removeLocal(from);
+            for (const rewrite of rewrites) await this.writeLocal(rewrite.path, rewrite.text, kindOf(rewrite.path));
+        }).then(() => this.afterLocal([from, to, ...rewrites.map((r) => r.path)]));
+    }
+
+    async afterLocal(paths) {
+        await this.countPending();
+        if (this.state === 'idle' || this.state === 'pending') this.setState('idle');
+        else this.emit('state', { state: this.state, error: this.error, pending: this.pendingCount });
+        this.emit('local', { paths });
+        this.schedulePush();
+    }
+
+    /** All files as the user sees them (GitHub plus local edits). */
+    files() {
+        return this.store.view();
+    }
+
+    // ------------------------------------------------------------ push
+
+    schedulePush(delay = this.pushDelayMs) {
+        clearTimeout(this.pushTimer);
+        this.pushTimer = setTimeout(() => this.push().catch(() => {}), delay);
+    }
+
+    /** Commit every pending edit now. Resolves with the commit, or null if there was nothing. */
+    push() {
+        clearTimeout(this.pushTimer);
+        this.pushing ??= (async () => {
+            await this.beforeSync?.();
+            return this.exclusive(() => this.runPush());
+        })().finally(() => {
+            this.pushing = null;
+        });
+        return this.pushing;
+    }
+
+    async runPush() {
+        for (let attempt = 1; ; attempt += 1) {
+            const pending = await this.store.allPending();
+            if (!pending.length) {
+                this.pendingCount = 0;
+                if (this.state === 'pending') this.setState('idle');
+                return null;
+            }
+            const files = new Map((await this.store.allFiles()).map((f) => [f.path, f]));
+            const additions = pending.filter((e) => e.text !== null).map((e) => ({ path: e.path, text: e.text }));
+            const deletions = pending.filter((e) => e.text === null && files.has(e.path)).map((e) => e.path);
+            if (!additions.length && !deletions.length) {
+                await this.store.deletePending(pending.map((e) => e.path));
+                await this.countPending();
+                this.setState('idle');
+                return null;
+            }
+            this.setState('syncing');
+            try {
+                const expectedHead = await this.store.getMeta('head');
+                const commit = await this.github.commit({
+                    branch: this.branch,
+                    expectedHead,
+                    message: commitMessage(additions, deletions, files),
+                    additions,
+                    deletions,
+                });
+                // The commit is exactly our edits on top of the head we had, so the device's
+                // copy of GitHub becomes: what we had, plus these files.
+                const rows = await Promise.all(
+                    additions.map(async ({ path, text }) => ({
+                        path,
+                        text,
+                        sha: await gitBlobSha(text),
+                        size: new TextEncoder().encode(text).length,
+                        kind: files.get(path)?.kind || kindOf(path),
+                    })),
+                );
+                await this.store.putFiles(rows);
+                if (deletions.length) await this.store.deleteFiles(deletions);
+                await this.store.deletePending(pending.map((e) => e.path));
+                await this.store.setMeta('head', commit.oid);
+                await this.countPending();
+                this.setState('idle');
+                this.emit('pushed', { commit, paths: pending.map((e) => e.path) });
+                return commit;
+            } catch (error) {
+                if (error instanceof GitHubError && error.status === 409 && attempt < MAX_PUSH_ATTEMPTS) {
+                    // Someone pushed first: bring their changes in, merge, and try again.
+                    await this.runPull();
+                    continue;
+                }
+                this.failed(error);
+                throw error;
+            }
+        }
+    }
+
+    // ------------------------------------------------------------ reading
+
+    /**
+     * Current text of a file (local edits first), downloading it if it wasn't fetched yet.
+     * Reads don't wait for a running pull, so notes open instantly during the first download.
+     */
+    text(path) {
+        return this.textUnlocked(path);
+    }
+
+    async textUnlocked(path) {
+        const edit = await this.store.getPending(path);
+        if (edit) return edit.text;
         const file = await this.store.getFile(path);
         if (!file) return null;
         if (file.text !== undefined) return file.text;
@@ -208,24 +475,38 @@ export class VaultSync extends Emitter {
         return url;
     }
 
-    /** Pull now, then every minute while the tab is visible, and whenever it comes back. */
+    // ------------------------------------------------------------ scheduling
+
+    /** Pull, then push anything waiting. */
+    async sync() {
+        await this.pull();
+        if (await this.countPending()) await this.push();
+    }
+
+    /**
+     * Sync now, then every minute while the tab is visible and whenever it comes back online.
+     * Pending edits are pushed right away when the tab is hidden (switching apps on a phone).
+     */
     start() {
-        const quiet = () => this.pull().catch(() => {});
+        const quiet = () => this.sync().catch(() => {});
         const visible = () => globalThis.document?.visibilityState !== 'hidden';
         this.timer = setInterval(() => {
             if (visible()) quiet();
         }, this.intervalMs);
         this.onVisible = () => {
-            if (visible() && Date.now() - this.lastPull > 10_000) quiet();
+            if (!visible()) {
+                if (this.pendingCount) this.push().catch(() => {});
+            } else if (Date.now() - this.lastPull > 10_000) quiet();
         };
         globalThis.document?.addEventListener('visibilitychange', this.onVisible);
         globalThis.addEventListener?.('online', quiet);
         this.onOnline = quiet;
-        return this.pull();
+        return this.countPending().then(() => this.sync());
     }
 
     stop() {
         clearInterval(this.timer);
+        clearTimeout(this.pushTimer);
         globalThis.document?.removeEventListener('visibilitychange', this.onVisible);
         globalThis.removeEventListener?.('online', this.onOnline);
         for (const url of this.urls.values()) URL.revokeObjectURL(url);

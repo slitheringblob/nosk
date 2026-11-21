@@ -1,6 +1,6 @@
 # nosk v3 — git-backed, no server
 
-**Status:** milestone 1 done (2026-11-21). Replaces the FastAPI backend for single-user use.
+**Status:** milestones 1 and 2 done, plus merging and daily notes (2026-11-21), released as v0.1.0. Replaces the FastAPI backend for single-user use.
 
 ### Progress
 
@@ -8,7 +8,14 @@
 |---|---|---|
 | 1. Read-only vault | done | Tested against the real vault: 394 notes render with no errors; first download 7 s / 13 requests; reopen costs 1 request; offline reload works |
 | Write primitive | done | `GitHub.commit` via `createCommitOnBranch`. Real test commit `95c125d` added `nosk/Sample note from nosk.md`; a commit against a stale head was refused (409) and wrote nothing |
-| 2–5 | not started | |
+| 2. Editing | done | Markdown source editor (not blocks, see below), tickable tasks, new / rename (rewrites links) / delete, pending edits pushed after 15 s idle, on hide or Ctrl+S |
+| 3. Merging | done | Line-based diff3 on pull and on a refused push; overlapping edits keep ours and save theirs as a conflict copy. Verified on the real vault with simulated Obsidian commits |
+| 4. Journal, templates, history | journal done | Daily notes follow the vault's format (detected); templates and history not started |
+| 5. Polish | not started | Attachment upload, QR token transfer, remove the backend |
+
+**Revision (milestone 2):** editing is markdown source, not the block editor. Editing the file
+itself can't mangle syntax nosk doesn't understand, needs no markdown⇄blocks round trip, and is
+how Obsidian works. The source-span/block plan below is kept for reference only.
 
 ## Decision
 
@@ -28,8 +35,9 @@ only source of truth; each device keeps a full offline copy in IndexedDB.
 - 430 user files, ~11 MB; 394 `.md`, plus png/svg/pdf/docx, 4 `.excalidraw`, 3 `.canvas`,
   3 `.base`. `.obsidian/` holds config, themes and plugins (ignored apart from the config below).
 - About a dozen top-level folders; the largest holds ~120 notes, the daily-notes folder ~100.
-- Daily notes: `.obsidian/daily-notes.json` says folder `Worklog`, format `DD-MM-YYYY`, but the
-  actual files are `Worklog/Nov-25/12Nov25.md` (month folders, `DMMMYY`). nosk follows the files.
+- Daily notes: `.obsidian/daily-notes.json` says folder `Worklog`, format `DD-MM-YYYY`; 66 notes
+  follow it and 34 older ones use month folders (`Nov-25/12Nov25`). nosk counts matches per
+  pattern and uses the most common one.
 - Plugins in use that write custom syntax: tasks, calendar, excalidraw, advanced-slides.
 
 ## Architecture
@@ -98,8 +106,8 @@ Push (30 s after the last edit, when the tab is hidden, or every 2 min with pend
 Rate limits are not a concern for one user (5,000 REST requests/hour; an idle pull is 1).
 
 ### Daily journal
-- Location and filename come from a nosk setting, defaulting to what the vault already does
-  (`Worklog/MMM-YY/DMMMYY.md`), with `daily-notes.json` as a fallback.
+- Location and filename come from `daily-notes.json`, checked against the files that exist
+  (most common pattern wins), and can be overridden in settings.
 - Today / previous / next navigation stays. Entries are found by parsing filenames, so existing
   worklog notes show up immediately.
 - Since the path is derived from the date, two devices creating the same day produce the same

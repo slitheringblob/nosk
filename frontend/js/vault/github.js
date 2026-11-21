@@ -143,7 +143,9 @@ export class GitHub {
             const moved = result.errors.some(
                 (e) => e.type === 'STALE_DATA' || /expected branch to point to/i.test(e.message),
             );
-            throw new GitHubError(message, moved ? 409 : 422);
+            // A read-only token gets FORBIDDEN ("Resource not accessible by personal access token").
+            const forbidden = result.errors.some((e) => e.type === 'FORBIDDEN' || /not accessible/i.test(e.message));
+            throw new GitHubError(message, moved ? 409 : forbidden ? 403 : 422);
         }
         return result.data;
     }

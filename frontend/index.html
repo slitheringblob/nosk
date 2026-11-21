@@ -16,6 +16,7 @@
     <script src="js/theme-boot.js"></script>
     <link rel="stylesheet" href="css/main.css">
     <link rel="stylesheet" href="css/components.css">
+    <link rel="stylesheet" href="css/picker.css">
     <link rel="stylesheet" href="css/vault.css">
     <link rel="stylesheet" href="css/print.css" media="print">
     <link rel="stylesheet" href="lib/katex/katex.min.css">
@@ -51,6 +52,7 @@
 
             <div class="tree-toolbar">
                 <input id="tree-filter" class="sidebar__filter" type="search" placeholder="filter files…" aria-label="Filter files">
+                <button id="new-note" type="button" class="icon-btn" title="New note (Alt+N)" aria-label="New note">+</button>
                 <button id="collapse-tree" type="button" class="icon-btn" title="Collapse all folders" aria-label="Collapse all folders">⊟</button>
             </div>
             <nav id="tree" class="sidebar__nav tree" aria-label="Files"></nav>
@@ -69,6 +71,7 @@
             <header class="topbar">
                 <button id="toggle-sidebar" type="button" class="icon-btn topbar__menu" title="Open sidebar (Ctrl/⌘+\)" aria-label="Open sidebar">☰</button>
                 <div class="topbar__spacer"></div>
+                <button id="open-today" type="button" class="btn btn-ghost btn-sm" title="Today's note (Alt+D)">today</button>
                 <button id="open-search" type="button" class="btn btn-ghost btn-sm" title="Search all notes">search <kbd>/</kbd></button>
             </header>
             <div id="view" class="view"></div>

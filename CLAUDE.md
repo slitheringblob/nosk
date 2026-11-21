@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 It is moving to a git-backed, serverless design: a static app (GitHub Pages) that reads and writes
 an Obsidian vault in a GitHub repo. Read `project_plan/GIT_BACKED_PLAN.md` first; milestone 1
-(read-only vault) lives in `frontend/index.html` + `frontend/js/vault/`. The earlier
+(vault reading and editing) lives in `frontend/index.html` + `frontend/js/vault/`. The earlier
 FastAPI + block-editor build is still in `backend/` and `frontend/legacy.html`; its plan is
 `project_plan/PROJECT_PLAN.md` ("Status & Revisions" section).
 
@@ -40,9 +40,15 @@ cd frontend && npm run vendor                                             # refr
 - **Pull** (`sync.js`): branch head → if changed, recursive tree → download only blobs whose sha
   changed. Text comes ~50 files per GraphQL request (`blobTexts`); binaries download on first
   view (`blobUrl`) and are cached by sha. The head is recorded last so interrupted pulls resume.
+- **Local edits** go to the `pending` store (`sync.saveLocal/deleteLocal/renameLocal`); the UI
+  reads `sync.files()` / `sync.text()`, which overlay pending on GitHub's copy. Never write
+  `files` directly: it must always mirror GitHub.
 - **Writes** go through `GitHub.commit` (GraphQL `createCommitOnBranch`) with `expectedHead`; a
-  moved branch is a 409 and nothing is written. Never write with the contents API (no
-  optimistic concurrency).
+  moved branch is a 409 and nothing is written. `runPush` then pulls, rebases pending edits with
+  `merge3` (overlaps: ours kept, theirs saved as a conflict copy) and retries. Never write with
+  the contents API (no optimistic concurrency).
+- Pull, push and local edits run one at a time through `sync.exclusive()`; open editors flush
+  via `sync.beforeSync` before each sync.
 - **Rendering** (`render.js`): marked + extensions for Obsidian syntax, sanitized with DOMPurify,
   then `hydrate()` adds images, embeds, callouts, math, highlighting. Link resolution follows
   Obsidian (`links.js`).
