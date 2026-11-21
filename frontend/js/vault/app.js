@@ -270,7 +270,11 @@ class VaultApp {
         } catch (error) {
             if (error instanceof OfflineError) throw new Error("Can't reach GitHub. Check your connection.");
             if (error.status === 401) throw new Error('GitHub rejected the token (expired or mistyped?).');
-            if (error.status === 404) throw new Error(`${owner}/${repo} not found, or the token can't see it.`);
+            if (error.status === 404) {
+                throw new Error(
+                    `This token can't see ${owner}/${repo}. On GitHub, edit the token: Repository access → Only select repositories → ${repo}, and Contents → Read and write.`,
+                );
+            }
             throw error;
         }
         const chosen = branch || info.default_branch;
