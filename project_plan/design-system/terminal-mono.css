@@ -1,0 +1,155 @@
+/* Terminal Mono — starter stylesheet. See DESIGN_SYSTEM.md for usage rules. */
+
+:root {
+    --bg: #06070b;
+    --bg-elev: #0b0c12;
+    --panel: #0d0e16;
+    --surface: #c0caf507;
+    --surface-2: #c0caf50e;
+    --surface-3: #c0caf516;
+    --code-surface: #0a0c14;
+    --code-surface-header: #0f111c;
+    --bdr: #c0caf517;
+    --bdr-hi: #c0caf533;
+    --txt: #e4e8f7;
+    --txt-2: #9ba3c4;
+    --txt-3: #747b9e;
+    --txt-4: #3a4060;
+    --amber: #fbbf24;
+    --amber-fill: #fcd34d;
+    --amber-fill-hover: #fef08a;
+    --amber-fill-active: #fbbf24;
+    --on-amber: #0b0a06;
+    --amber-wash: #fbbf2412;
+    --amber-line: #fbbf2452;
+    --amber-glow: #fbbf2459;
+    --blue: #7aa2f7;
+    --cyan: #7dcfff;
+    --violet: #bb9af7;
+    --green: #9ece6a;
+    --rose: #f7768e;
+    --orange: #ff9e64;
+    --grid: #c0caf509;
+    --nav-bg: #06070bd6;
+    --scrim: #000000a6;
+    --shadow-float: 0 60px 140px -60px #000000f2;
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+    --bg: #f4f5f8;
+    --bg-elev: #fff;
+    --panel: #fff;
+    --surface: #0b0d1406;
+    --surface-2: #0b0d140d;
+    --surface-3: #0b0d1414;
+    --bdr: #0b0d141a;
+    --bdr-hi: #0b0d1438;
+    --txt: #0b0d14;
+    --txt-2: #454c5e;
+    --txt-3: #686f82;
+    --txt-4: #b3b9c6;
+    --amber: #b45309;
+    --amber-wash: #b453090f;
+    --amber-line: #b4530959;
+    --amber-glow: #b4530938;
+    --blue: #0969da;
+    --cyan: #0550ae;
+    --violet: #8250df;
+    --green: #116329;
+    --rose: #cf222e;
+    --orange: #953800;
+    --grid: #0b0d140b;
+    --nav-bg: #f4f5f8e0;
+    --scrim: #0b0d1440;
+    --shadow-float: 0 50px 100px -50px #0b0d1459;
+    color-scheme: light;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--txt);
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.6;
+    font-feature-settings: "zero" 1;
+    font-variant-ligatures: none;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+::selection { background: var(--amber-fill); color: #08080b; }
+:focus-visible { outline: 1px solid var(--amber); outline-offset: 2px; }
+button, input, select, textarea { font: inherit; color: inherit; }
+
+/* Atmosphere — place <div class="atmos"><div class="atmos-glow"></div><div class="atmos-grid"></div></div> first in <body> */
+.atmos { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+.atmos-glow {
+    position: absolute; inset: -30% -10% auto; height: 90vh; filter: blur(20px); opacity: .7;
+    background:
+        radial-gradient(40% 40% at 22% 30%, #fbbf2417, transparent 70%),
+        radial-gradient(40% 40% at 80% 20%, #7aa2f71a, transparent 72%);
+}
+:root[data-theme="light"] .atmos-glow { opacity: .5; }
+.atmos-grid {
+    position: absolute; inset: 0;
+    background-image: linear-gradient(var(--grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 32px 32px;
+    mask-image: radial-gradient(120% 70% at 50% 0, #000 25%, transparent 80%);
+}
+
+.cursor {
+    display: inline-block; width: .5em; height: .82em; margin-left: .1em;
+    background: var(--amber); animation: blink 1.05s step-end infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+.eyebrow {
+    font-size: 10.5px; font-weight: 600; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--txt-3);
+}
+
+.btn {
+    height: 34px; padding: 0 14px; display: inline-flex; align-items: center; gap: 8px;
+    border: 1px solid transparent; border-radius: 0; font-size: 12px; font-weight: 600;
+    cursor: pointer; transition: background-color .15s, border-color .15s, color .15s;
+}
+.btn-sm { height: 28px; padding: 0 10px; font-size: 11.5px; }
+.btn-primary { background: var(--amber-fill); color: var(--on-amber); }
+.btn-primary:hover { background: var(--amber-fill-hover); }
+.btn-primary:active { background: var(--amber-fill-active); }
+.btn-ghost { background: transparent; border-color: var(--bdr-hi); color: var(--txt); }
+.btn-ghost:hover { border-color: var(--amber-line); background: var(--amber-wash); color: var(--amber); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+
+input, select, textarea {
+    background: var(--surface); border: 1px solid var(--bdr-hi); border-radius: 0;
+    padding: 7px 10px; font-size: 12.5px;
+}
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--amber-line); background: var(--surface-2); }
+input::placeholder, textarea::placeholder { color: var(--txt-3); }
+input[type="checkbox"], input[type="range"] { accent-color: var(--amber); }
+
+kbd {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 20px; height: 20px; padding: 0 5px;
+    border: 1px solid var(--bdr-hi); border-bottom-width: 2px; background: var(--surface);
+    font-family: var(--mono); font-size: 10.5px; color: var(--txt-2);
+}
+
+.badge {
+    display: inline-flex; padding: 1px 6px; font-size: 9.5px; font-weight: 700;
+    letter-spacing: .08em; text-transform: uppercase;
+    color: var(--amber); border: 1px solid var(--amber-line); background: var(--amber-wash);
+}
+
+.panel-float { background: var(--panel); border: 1px solid var(--bdr-hi); box-shadow: var(--shadow-float); }
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+}

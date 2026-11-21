@@ -1,0 +1,174 @@
+/* nosk vault mode: setup screen, folder tree and rendered Obsidian notes. Uses the tokens from
+   main.css, so both themes work. */
+
+/* --- Setup ----------------------------------------------------------------------------------- */
+
+.setup {
+    position: relative;
+    z-index: 1;
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 32px 16px;
+}
+.setup__card {
+    width: min(460px, 100%);
+    display: grid;
+    gap: 14px;
+    padding: 28px;
+    border: 1px solid var(--bdr-hi);
+    background: var(--panel);
+    box-shadow: var(--shadow-float);
+}
+.setup__lead { margin: 0; color: var(--txt-2); font-size: 13px; line-height: 1.6; }
+.setup__steps { margin: 4px 0 0; padding-left: 18px; color: var(--txt-3); font-size: 12px; line-height: 1.7; }
+.setup__steps a { color: var(--amber); }
+.setup__steps b { color: var(--txt-2); font-weight: 600; }
+
+/* --- Sidebar tree ---------------------------------------------------------------------------- */
+
+.tree-toolbar { display: flex; gap: 4px; align-items: center; }
+.tree-toolbar .sidebar__filter { flex: 1; min-width: 0; }
+.tree { display: flex; flex-direction: column; }
+.tree-folder {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 4px 8px 4px calc(var(--depth, 0) * 12px);
+    background: none;
+    border: 0;
+    color: var(--txt-2);
+    font-size: 12.5px;
+    text-align: left;
+}
+.tree-folder:hover { color: var(--txt); background: var(--surface-2); }
+.tree-folder__chevron { width: 10px; color: var(--txt-4); font-size: 10px; }
+.tree-folder__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.tree-file { padding-left: calc(var(--depth, 0) * 12px + 16px); margin-left: 0; }
+.tree-file .nav-page__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-file .nav-page__icon { width: 10px; color: var(--txt-4); flex: none; }
+.tree-file:not(.tree-file--note) { color: var(--txt-3); }
+.tree-file__folder { margin-left: auto; color: var(--txt-4); font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 45%; }
+.sidebar__user { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* --- Home ------------------------------------------------------------------------------------ */
+
+.home-list { display: grid; border: 1px solid var(--bdr); }
+.home-list__item {
+    display: flex;
+    gap: 12px;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--bdr);
+    color: var(--txt);
+    text-decoration: none;
+    font-size: 13px;
+}
+.home-list__item:last-child { border-bottom: 0; }
+.home-list__item:hover { background: var(--amber-wash); }
+.home-list__item .muted { font-size: 11px; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%; }
+.tag-cloud { display: flex; flex-wrap: wrap; gap: 6px; }
+.progress { display: grid; gap: 8px; max-width: 420px; margin-top: 24px; }
+.progress__track { height: 4px; background: var(--surface-3); }
+.progress__fill { height: 100%; width: 0; background: var(--amber); transition: width .2s; }
+
+/* --- Note view ------------------------------------------------------------------------------- */
+
+.note .page-meta { display: flex; gap: 8px; align-items: center; color: var(--txt-3); font-size: 11px; }
+.tag {
+    color: var(--cyan);
+    text-decoration: none;
+    font-size: 12px;
+    padding: 1px 6px;
+    background: color-mix(in srgb, var(--cyan) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--cyan) 25%, transparent);
+}
+.tag:hover { border-color: var(--cyan); }
+.properties { grid-template-columns: minmax(80px, max-content) 1fr; margin: 10px 0 4px; padding: 10px 12px; border: 1px solid var(--bdr); background: var(--surface); font-size: 12px; }
+.properties dd { word-break: break-word; }
+
+.note-body { color: var(--txt); font-size: 14px; line-height: 1.7; padding-bottom: 32px; overflow-wrap: anywhere; }
+.note-body > :first-child { margin-top: 0; }
+.note-body h1, .note-body h2, .note-body h3, .note-body h4, .note-body h5, .note-body h6 {
+    margin: 1.6em 0 .5em;
+    letter-spacing: -.03em;
+    line-height: 1.25;
+    scroll-margin-top: 64px;
+}
+.note-body h1 { font-size: 26px; }
+.note-body h2 { font-size: 21px; }
+.note-body h3 { font-size: 17px; }
+.note-body h4, .note-body h5, .note-body h6 { font-size: 14px; color: var(--txt-2); }
+.note-body p, .note-body ul, .note-body ol, .note-body table, .note-body pre { margin: 0 0 1em; }
+.note-body ul, .note-body ol { padding-left: 1.4em; }
+.note-body li { margin: 2px 0; }
+.note-body li > ul, .note-body li > ol { margin: 2px 0; }
+.note-body a { color: var(--blue); text-decoration-color: color-mix(in srgb, var(--blue) 40%, transparent); text-underline-offset: 3px; }
+.note-body a:hover { color: var(--amber); }
+.note-body .wikilink { color: var(--violet); text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--violet) 35%, transparent); }
+.note-body .wikilink:hover { color: var(--amber); border-bottom-color: currentColor; }
+.note-body .wikilink.is-unresolved { color: var(--txt-3); border-bottom-style: dashed; cursor: default; }
+.note-body .wikilink--file { color: var(--cyan); }
+.note-body code { font-family: var(--mono); font-size: .92em; color: var(--orange); background: var(--surface-2); padding: 1px 4px; }
+.note-body pre { position: relative; padding: 12px 14px; overflow-x: auto; background: var(--code-surface); border: 1px solid var(--bdr); color: #e4e8f7; font-size: 12.5px; line-height: 1.6; }
+.note-body pre code { background: none; padding: 0; color: inherit; font-size: inherit; }
+.note-body pre[data-lang]::before { content: attr(data-lang); position: absolute; top: 4px; right: 8px; color: #747b9e; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+.note-body pre.is-query { border-style: dashed; }
+.note-body blockquote { margin: 0 0 1em; padding: 2px 0 2px 14px; border-left: 2px solid var(--amber); color: var(--txt-2); }
+.note-body hr { border: 0; border-top: 1px solid var(--bdr-hi); margin: 2em 0; }
+.note-body table { border-collapse: collapse; display: block; overflow-x: auto; font-size: 13px; }
+.note-body th, .note-body td { border: 1px solid var(--bdr-hi); padding: 6px 10px; text-align: left; vertical-align: top; }
+.note-body th { background: var(--surface-2); font-weight: 600; }
+.note-body img { max-width: 100%; height: auto; }
+.note-body img.is-missing { display: inline-block; padding: 12px; border: 1px dashed var(--bdr-hi); color: var(--txt-3); font-size: 12px; }
+.note-body mark { background: color-mix(in srgb, var(--amber) 30%, transparent); color: inherit; padding: 0 2px; }
+.note-body .math-block { margin: 0 0 1em; overflow-x: auto; }
+.note-body .is-target { outline: 1px solid var(--amber-line); outline-offset: 4px; background: var(--amber-wash); }
+
+/* Tasks */
+.note-body .task-list { list-style: none; padding-left: .4em; }
+.note-body .task { position: relative; }
+.note-body .task input[type="checkbox"] { margin: 0 8px 0 0; vertical-align: -1px; accent-color: var(--amber); }
+.note-body .task.is-done { color: var(--txt-3); text-decoration: line-through; text-decoration-color: var(--txt-4); }
+.note-body .task__marker { margin-right: 8px; color: var(--amber); font-size: 12px; }
+.note-body .task--cancelled { color: var(--txt-3); text-decoration: line-through; }
+.note-body .task--doing .task__marker { color: var(--cyan); }
+
+/* Callouts */
+.note-body .callout {
+    --c: var(--blue);
+    margin: 0 0 1em;
+    border: 1px solid color-mix(in srgb, var(--c) 35%, transparent);
+    border-left: 2px solid var(--c);
+    background: color-mix(in srgb, var(--c) 7%, transparent);
+}
+.note-body .callout[data-color="cyan"] { --c: var(--cyan); }
+.note-body .callout[data-color="green"] { --c: var(--green); }
+.note-body .callout[data-color="amber"] { --c: var(--amber); }
+.note-body .callout[data-color="rose"] { --c: var(--rose); }
+.note-body .callout[data-color="violet"] { --c: var(--violet); }
+.note-body .callout[data-color="muted"] { --c: var(--txt-3); }
+.note-body .callout__title { padding: 8px 12px; color: var(--c); font-weight: 700; font-size: 13px; }
+.note-body summary.callout__title { cursor: pointer; }
+.note-body .callout__content { padding: 0 12px 4px; }
+.note-body .callout__content:empty { display: none; }
+
+/* Embedded notes */
+.note-body .note-embed { margin: 0 0 1em; border: 1px solid var(--bdr-hi); border-left: 2px solid var(--violet); background: var(--surface); }
+.note-body .note-embed__title { display: block; padding: 6px 12px; border-bottom: 1px solid var(--bdr); color: var(--violet); font-size: 11px; text-decoration: none; letter-spacing: .04em; }
+.note-body .note-embed__body { padding: 10px 14px 0; font-size: 13px; }
+
+/* Other files */
+.file-view { display: grid; gap: 12px; padding-bottom: 32px; }
+.file-view img { max-width: 100%; border: 1px solid var(--bdr); background: var(--surface); }
+.file-view iframe { width: 100%; height: 75vh; border: 1px solid var(--bdr); background: #fff; }
+.file-view__actions { display: flex; gap: 6px; }
+.file-source { max-height: 70vh; overflow: auto; padding: 12px 14px; background: var(--code-surface); border: 1px solid var(--bdr); color: #e4e8f7; font-size: 12px; margin-top: 12px; white-space: pre-wrap; word-break: break-all; }
+.modal__actions--start { justify-content: flex-start; flex-wrap: wrap; }
+
+@media (max-width: 860px) {
+    .note-body { font-size: 15px; }
+    .note-body pre { font-size: 12px; }
+}
