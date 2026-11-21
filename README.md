@@ -6,8 +6,6 @@ nosk opens your Obsidian vault straight from its GitHub repo, in any browser: la
 phone. Nothing to install, no sync subscription, no server. Your notes stay plain markdown in a
 repo you own, and Obsidian keeps working exactly as before.
 
-**[nosk.jaydeepganatra.dev →](https://nosk.jaydeepganatra.dev)**
-
 ![nosk showing a note with properties, a callout, tasks and code](docs/screenshot.png)
 
 ## What it does
@@ -30,7 +28,7 @@ repo you own, and Obsidian keeps working exactly as before.
 
 1. Create a [fine-grained GitHub token](https://github.com/settings/personal-access-tokens/new)
    with access to **only your vault repo** and **Contents: Read and write**.
-2. Open **[nosk.jaydeepganatra.dev](https://nosk.jaydeepganatra.dev)**.
+2. Open nosk in your browser.
 3. Enter your vault repo (`you/your-vault`) and paste the token. That's it.
 
 ## What's next
