@@ -3,27 +3,20 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' blob: data: https:; connect-src 'self' https://api.github.com; frame-src blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
+    <meta name="referrer" content="no-referrer">
     <title>nosk</title>
-    <meta name="description" content="Tasks and notes that sync across devices.">
+    <meta name="description" content="Your Obsidian vault on every device, straight from GitHub.">
     <meta name="theme-color" content="#06070b">
     <link rel="manifest" href="manifest.webmanifest">
     <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,500&display=swap">
-    <script>
-        // Apply the theme before first paint to avoid a flash.
-        (function () {
-            var pref = 'system';
-            try { pref = localStorage.getItem('nosk.theme') || 'system'; } catch (e) {}
-            var dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-            document.documentElement.dataset.theme = pref === 'system' ? (dark ? 'dark' : 'light') : pref;
-        })();
-    </script>
+    <script src="js/theme-boot.js"></script>
     <link rel="stylesheet" href="css/main.css">
     <link rel="stylesheet" href="css/components.css">
-    <link rel="stylesheet" href="css/picker.css">
-    <link rel="stylesheet" href="css/dragdrop.css">
+    <link rel="stylesheet" href="css/vault.css">
     <link rel="stylesheet" href="css/print.css" media="print">
     <link rel="stylesheet" href="lib/katex/katex.min.css">
     <link rel="stylesheet" id="hljs-theme" href="lib/highlight-github-dark.min.css">
@@ -31,13 +24,15 @@
     <script src="lib/marked.min.js" defer></script>
     <script src="lib/highlight.min.js" defer></script>
     <script src="lib/katex/katex.min.js" defer></script>
-    <script type="module" src="js/app.js"></script>
+    <script type="module" src="js/vault/app.js"></script>
 </head>
 <body>
     <div class="atmos" aria-hidden="true"><div class="atmos-glow"></div><div class="atmos-grid"></div></div>
 
-    <div id="app" class="app">
-        <aside id="sidebar" class="sidebar" aria-label="Pages">
+    <section id="setup" class="setup" hidden></section>
+
+    <div id="app" class="app" hidden>
+        <aside id="sidebar" class="sidebar" aria-label="Vault">
             <div class="sidebar__brand">
                 <a class="brand" href="#/">nosk<span class="cursor" aria-hidden="true"></span></a>
                 <div class="sidebar__brand-actions">
@@ -50,30 +45,21 @@
             </div>
 
             <button id="open-palette" type="button" class="search-trigger">
-                <span><span class="accent">&gt;</span> quick actions</span>
-                <kbd data-kbd-mod>⌘K</kbd>
+                <span><span class="accent">&gt;</span> open a note</span>
+                <kbd>⌘K</kbd>
             </button>
 
-            <div class="sidebar__actions">
-                <button id="new-page" type="button" class="btn btn-primary btn-block">+ new page</button>
-                <div class="sidebar__actions-row">
-                    <button id="open-today" type="button" class="btn btn-ghost btn-sm" title="Today's journal (Ctrl+Alt+J)">today</button>
-                    <button id="open-templates" type="button" class="btn btn-ghost btn-sm">templates</button>
-                    <button id="open-import" type="button" class="btn btn-ghost btn-sm">import</button>
-                </div>
+            <div class="tree-toolbar">
+                <input id="tree-filter" class="sidebar__filter" type="search" placeholder="filter files…" aria-label="Filter files">
+                <button id="collapse-tree" type="button" class="icon-btn" title="Collapse all folders" aria-label="Collapse all folders">⊟</button>
             </div>
-
-            <input data-sidebar-filter class="sidebar__filter" type="search" placeholder="filter pages…" aria-label="Filter pages">
-            <div data-sidebar-tags class="sidebar__tags" hidden></div>
-            <nav data-sidebar-list class="sidebar__nav"></nav>
+            <nav id="tree" class="sidebar__nav tree" aria-label="Files"></nav>
 
             <footer class="sidebar__footer">
-                <button id="verify-reminder" type="button" class="verify-reminder" hidden>verify your email →</button>
                 <div class="sidebar__footer-row">
-                    <button id="open-trash" type="button" class="link-btn">trash</button>
+                    <span id="vault-name" class="sidebar__user"></span>
                     <button id="open-settings" type="button" class="link-btn">settings</button>
                 </div>
-                <div id="user-email" class="sidebar__user"></div>
             </footer>
             <div id="sidebar-resizer" class="sidebar__resizer" role="separator" aria-orientation="vertical" aria-label="Resize sidebar (arrow keys; double-click to reset)" tabindex="0"></div>
         </aside>
@@ -83,49 +69,10 @@
             <header class="topbar">
                 <button id="toggle-sidebar" type="button" class="icon-btn topbar__menu" title="Open sidebar (Ctrl/⌘+\)" aria-label="Open sidebar">☰</button>
                 <div class="topbar__spacer"></div>
-                <div id="presence" class="presence" aria-live="polite"></div>
-                <button id="open-search" type="button" class="btn btn-ghost btn-sm" title="Search all pages">search <kbd data-kbd-mod>⌘F</kbd></button>
-                <button id="action-share" type="button" class="btn btn-ghost btn-sm" data-page-action>share</button>
-                <button id="action-comments" type="button" class="btn btn-ghost btn-sm" data-page-action>comments</button>
-                <button id="action-history" type="button" class="btn btn-ghost btn-sm" data-page-action>history</button>
-                <button id="action-more" type="button" class="icon-btn" data-page-action aria-label="More page actions">⋯</button>
+                <button id="open-search" type="button" class="btn btn-ghost btn-sm" title="Search all notes">search <kbd>/</kbd></button>
             </header>
-
-            <section id="welcome" class="welcome" hidden>
-                <div class="eyebrow">~/nosk <span class="accent">●</span> local-first notes</div>
-                <h1 class="hero-title">Write it down.<br><span class="hl">Sync everywhere.</span><span class="hero-cursor" aria-hidden="true"></span></h1>
-                <p class="hero-sub">Blocks for notes, tasks, tables and databases. Works offline, syncs in real time, resolves conflicts in the open.</p>
-                <div class="hero-actions">
-                    <button id="welcome-new" type="button" class="btn btn-primary">+ new page</button>
-                    <button id="welcome-today" type="button" class="btn btn-ghost">today's journal</button>
-                    <button id="welcome-template" type="button" class="btn btn-ghost">start from template</button>
-                    <button id="welcome-import" type="button" class="btn btn-ghost">import markdown</button>
-                </div>
-                <div class="feature-grid">
-                    <div class="feature"><div class="eyebrow">01/blocks</div><p>26 block types — type <kbd>/</kbd> anywhere.</p></div>
-                    <div class="feature"><div class="eyebrow">02/offline</div><p>Everything lives in your browser first and syncs when it can.</p></div>
-                    <div class="feature"><div class="eyebrow">03/together</div><p>Share pages, comment on blocks, see who's here.</p></div>
-                    <div class="feature"><div class="eyebrow">04/history</div><p>Automatic versions. Restore any point in time.</p></div>
-                </div>
-            </section>
-
-            <article id="editor" class="editor" hidden>
-                <div id="page-banner" class="banner" hidden></div>
-                <header class="page-header">
-                    <div class="eyebrow page-header__crumb"><span class="accent">~/</span><span id="breadcrumb"></span></div>
-                    <button id="page-icon" type="button" class="page-icon" aria-label="Change page icon">◇</button>
-                    <h1 id="page-title" class="page-title" contenteditable="true" spellcheck="true" data-placeholder="Untitled"></h1>
-                    <div id="page-tags" class="page-tags"></div>
-                    <div id="page-meta" class="page-meta"></div>
-                    <nav id="journal-nav" class="journal-nav" aria-label="Journal days" hidden></nav>
-                </header>
-                <div id="blocks" class="blocks"></div>
-                <div class="editor__tail" aria-hidden="true"></div>
-                <section id="backlinks" class="backlinks" hidden></section>
-            </article>
+            <div id="view" class="view"></div>
         </main>
-
-        <aside id="drawer" class="drawer" aria-label="Comments" hidden></aside>
     </div>
 </body>
 </html>

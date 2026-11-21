@@ -59,7 +59,7 @@ $('#auth-form').addEventListener('submit', async (event) => {
     try {
         if (mode === 'login') await api.login(email, password);
         else await api.register(email, password);
-        window.location.replace('index.html');
+        window.location.replace('legacy.html');
     } catch (err) {
         error.textContent = message(err);
     } finally {
@@ -107,14 +107,14 @@ async function init() {
             notice(message(err), 'error');
         }
         history.replaceState(null, '', 'login.html');
-        if (auth.isLoggedIn()) setTimeout(() => window.location.replace('index.html'), 1200);
+        if (auth.isLoggedIn()) setTimeout(() => window.location.replace('legacy.html'), 1200);
         return;
     }
     if (params.get('reset')) {
         showForm('#reset-form');
         return;
     }
-    if (auth.isLoggedIn()) window.location.replace('index.html');
+    if (auth.isLoggedIn()) window.location.replace('legacy.html');
 }
 
 init();

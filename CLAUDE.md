@@ -4,7 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**nosk** is a task and notes management system designed to sync seamlessly across devices. The full plan in `project_plan/` is implemented; read the "Status & Revisions" section of `project_plan/PROJECT_PLAN.md` before changing sync, nesting or auth.
+**nosk** is a task and notes management system designed to sync seamlessly across devices.
+
+It is moving to a git-backed, serverless design: a static app (GitHub Pages) that reads and writes
+an Obsidian vault in a GitHub repo. Read `project_plan/GIT_BACKED_PLAN.md` first; milestone 1
+(read-only vault) lives in `frontend/index.html` + `frontend/js/vault/`. The earlier
+FastAPI + block-editor build is still in `backend/` and `frontend/legacy.html`; its plan is
+`project_plan/PROJECT_PLAN.md` ("Status & Revisions" section).
 
 ## Project Goals
 
@@ -15,17 +21,36 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Development Setup
 
 ```bash
+cd frontend && python -m http.server 3000                                 # vault app on :3000
+cd frontend && npm test                                                   # vitest + jsdom
+# legacy server build:
 cd backend && source venv/bin/activate && uvicorn app.main:app --reload   # API on :8000
 cd backend && source venv/bin/activate && pytest                          # backend tests
 cd backend && source venv/bin/activate && alembic upgrade head            # migrations
 cd backend && source venv/bin/activate && black app tests alembic --line-length 100
-cd frontend && python -m http.server 3000                                 # app on :3000
-cd frontend && npm test                                                   # vitest + jsdom
+# legacy app: same static server, open /legacy.html
 cd frontend && npm run format                                             # prettier
 cd frontend && npm run vendor                                             # refresh lib/ from node_modules
 ```
 
-## Architecture
+## Architecture: vault mode (`frontend/js/vault/`)
+
+- **The repo is the source of truth.** `github.js` talks to api.github.com directly (CORS) with a
+  fine-grained token stored in IndexedDB. Never add a server dependency.
+- **Pull** (`sync.js`): branch head → if changed, recursive tree → download only blobs whose sha
+  changed. Text comes ~50 files per GraphQL request (`blobTexts`); binaries download on first
+  view (`blobUrl`) and are cached by sha. The head is recorded last so interrupted pulls resume.
+- **Writes** go through `GitHub.commit` (GraphQL `createCommitOnBranch`) with `expectedHead`; a
+  moved branch is a 409 and nothing is written. Never write with the contents API (no
+  optimistic concurrency).
+- **Rendering** (`render.js`): marked + extensions for Obsidian syntax, sanitized with DOMPurify,
+  then `hydrate()` adds images, embeds, callouts, math, highlighting. Link resolution follows
+  Obsidian (`links.js`).
+- **CSP** in `index.html` forbids inline/eval scripts; keep scripts in files.
+- **Deploy**: `.github/workflows/pages.yml` copies an explicit file list; add new shell files
+  there and to `sw.js` `SHELL`.
+
+## Architecture: legacy server build
 
 - **Local-first**: the browser writes to IndexedDB (`js/storage.js`) and queues idempotent ops in
   an outbox. `js/sync-client.js` batches pushes (`/api/sync/push`), pulls by cursor
