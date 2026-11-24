@@ -82,11 +82,14 @@ export class NoteEditor {
      * onChange(text): called (debounced) as the user types.
      * suggest(query): returns [{ label, detail, insert }] for [[link suggestions.
      * onSave(): Ctrl/Cmd+S.
+     * onUploadImages(files): called with File[] on paste, drag-drop, or toolbar image button;
+     *   returns Promise<string[]> of markdown snippets to insert at the caret.
      */
-    constructor({ text, onChange, suggest, onSave, saveDelay = 300 }) {
+    constructor({ text, onChange, suggest, onSave, onUploadImages = null, saveDelay = 300 }) {
         this.onChange = onChange;
         this.suggest = suggest;
         this.onSave = onSave;
+        this.onUploadImages = onUploadImages;
         this.textarea = el('textarea', {
             className: 'note-editor',
             spellcheck: true,
@@ -111,6 +114,7 @@ export class NoteEditor {
             setTimeout(() => this.closeSuggestions(), 150);
             this.flush();
         });
+        if (this.onUploadImages) this.bindImageDrops();
         requestAnimationFrame(() => this.autosize());
     }
 
@@ -362,6 +366,70 @@ export class NoteEditor {
         this.suggestions = [];
     }
 
+    // ------------------------------------------------------------ image paste / drop / pick
+
+    bindImageDrops() {
+        const extractImages = (list) =>
+            [...(list || [])].filter(
+                (file) =>
+                    file &&
+                    (file.type?.startsWith('image/') || /\.(png|jpe?g|gif|webp|avif|bmp|svg)$/i.test(file.name || '')),
+            );
+
+        this.textarea.addEventListener('paste', (event) => {
+            const items = event.clipboardData?.items;
+            const files = items
+                ? [...items]
+                      .filter((item) => item.kind === 'file')
+                      .map((item) => item.getAsFile())
+                      .filter(Boolean)
+                : [...(event.clipboardData?.files || [])];
+            const images = extractImages(files);
+            if (!images.length) return;
+            event.preventDefault();
+            this.handleImageFiles(images);
+        });
+
+        this.textarea.addEventListener('dragover', (event) => {
+            if (!event.dataTransfer?.types?.includes('Files')) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'copy';
+            this.textarea.classList.add('is-drop-image');
+        });
+        this.textarea.addEventListener('dragleave', () => {
+            this.textarea.classList.remove('is-drop-image');
+        });
+        this.textarea.addEventListener('drop', (event) => {
+            this.textarea.classList.remove('is-drop-image');
+            const images = extractImages(event.dataTransfer?.files);
+            if (!images.length) return;
+            event.preventDefault();
+            this.handleImageFiles(images);
+        });
+    }
+
+    pickImages() {
+        if (!this.onUploadImages) return;
+        const input = el('input', {
+            type: 'file',
+            accept: 'image/png,image/jpeg,image/gif,image/webp,image/avif,image/bmp,image/svg+xml',
+            multiple: true,
+        });
+        input.addEventListener('change', () => {
+            const files = [...(input.files || [])];
+            if (files.length) this.handleImageFiles(files);
+        });
+        input.click();
+    }
+
+    async handleImageFiles(files) {
+        if (!this.onUploadImages || !files.length) return;
+        const { selectionStart: start, selectionEnd: end } = this.textarea;
+        const snippets = await this.onUploadImages(files);
+        if (!snippets?.length) return;
+        this.replace(start, end, snippets.join('\n'));
+    }
+
     // ------------------------------------------------------------ toolbar
 
     buildToolbar() {
@@ -381,6 +449,7 @@ export class NoteEditor {
             button('•', 'Bullet list', () => this.toggleList()),
             button('☐', 'Task (Ctrl/⌘+Enter)', () => this.toggleTask()),
             button('[[', 'Link to a note', () => this.insertLink()),
+            this.onUploadImages ? button('▣', 'Insert image (or paste/drop)', () => this.pickImages()) : null,
             button('⇥', 'Indent', () => this.indent(false)),
             button('⇤', 'Outdent', () => this.indent(true)),
         );

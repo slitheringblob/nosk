@@ -1,5 +1,5 @@
 // Caches the app shell so nosk opens offline. The vault itself lives in IndexedDB, not here.
-const VERSION = 'nosk-vault-v4';
+const VERSION = 'nosk-vault-v5';
 const SHELL = [
     './',
     'index.html',
@@ -18,6 +18,7 @@ const SHELL = [
     'lib/highlight-github-dark.min.css',
     'lib/katex/katex.min.js',
     'lib/katex/katex.min.css',
+    'lib/lz-string.min.js',
     'js/theme-boot.js',
     'js/markdown.js',
     'js/sanitize.js',
@@ -28,6 +29,7 @@ const SHELL = [
     'js/vault/app.js',
     'js/vault/daily.js',
     'js/vault/editor.js',
+    'js/vault/excalidraw.js',
     'js/vault/merge.js',
     'js/vault/github.js',
     'js/vault/links.js',
