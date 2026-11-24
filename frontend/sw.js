@@ -1,5 +1,5 @@
 // Caches the app shell so nosk opens offline. The vault itself lives in IndexedDB, not here.
-const VERSION = 'nosk-vault-v5';
+const VERSION = 'nosk-vault-v6';
 const SHELL = [
     './',
     'index.html',
