@@ -3,6 +3,7 @@
 // dragged onto a folder (or onto a file, meaning its folder, or empty space, meaning the root);
 // `onMove(item, folder)` and `onMenu(item, row)` get { path } for a file or { folder }.
 import { el } from '../utils.js';
+import { isExcalidrawPath } from './excalidraw.js';
 import { displayName } from './links.js';
 import { noteHref } from './render.js';
 
@@ -10,7 +11,6 @@ const OPEN_KEY = 'nosk.vault.open';
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
 const KIND_ICONS = { note: '•', image: '▣', pdf: '▤', text: '≡', config: '⚙', file: '◇' };
-
 export function buildTree(files) {
     const root = { name: '', path: '', folders: new Map(), files: [] };
     for (const file of files) {
@@ -204,18 +204,24 @@ export class VaultTree {
 
     fileRow(file, depth, { showFolder = false } = {}) {
         const folder = file.path.includes('/') ? file.path.slice(0, file.path.lastIndexOf('/')) : '';
-        const name = file.kind === 'note' ? displayName(file.path) : file.path.slice(file.path.lastIndexOf('/') + 1);
+        const excalidraw = isExcalidrawPath(file.path);
+        const name = excalidraw
+            ? displayName(file.path).replace(/\.excalidraw$/i, '')
+            : file.kind === 'note'
+              ? displayName(file.path)
+              : file.path.slice(file.path.lastIndexOf('/') + 1);
+        const icon = excalidraw ? '✎' : KIND_ICONS[file.kind] || '·';
         return el(
             'a',
             {
-                className: `nav-page tree-file tree-file--${file.kind}${file.path === this.activePath ? ' is-active' : ''}${file.dirty ? ' is-dirty' : ''}`,
+                className: `nav-page tree-file tree-file--${excalidraw ? 'excalidraw' : file.kind}${file.path === this.activePath ? ' is-active' : ''}${file.dirty ? ' is-dirty' : ''}`,
                 href: noteHref(file.path),
                 title: file.path,
                 draggable: 'true',
                 dataset: { path: file.path },
                 style: `--depth: ${depth}`,
             },
-            el('span', { className: 'nav-page__icon' }, KIND_ICONS[file.kind] || '·'),
+            el('span', { className: 'nav-page__icon' }, icon),
             el('span', { className: 'nav-page__title' }, name),
             showFolder && folder ? el('span', { className: 'tree-file__folder' }, folder) : null,
         );

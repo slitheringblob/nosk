@@ -7,19 +7,27 @@ import { confirmDialog, modal, promptDialog, showMenu, toast } from '../ui.js';
 import { el, formatRelativeTime, isEditableTarget, modKey } from '../utils.js';
 import { applyTemplate, dailyPath, detectDaily } from './daily.js';
 import { NoteEditor, toggleTaskLine } from './editor.js';
+import {
+    currentExcalidrawTheme,
+    isExcalidrawFile,
+    isExcalidrawPath,
+    mountExcalidrawEditor,
+    newExcalidrawMarkdownTemplate,
+    renderExcalidrawSvg,
+} from './excalidraw.js';
 import { GitHub, GitHubError, OfflineError } from './github.js';
 import { LinkIndex, displayName, outgoingLinks, parseLinkTarget } from './links.js';
 import { Palette } from './palette.js';
 import { hydrate, noteHref, noteTags, renderNote } from './render.js';
 import { VaultSearch } from './search.js';
 import { VaultStore } from './store.js';
-import { VaultSync, kindOf } from './sync.js';
+import { VaultSync, kindOf, mimeOf } from './sync.js';
 import { VaultTree } from './tree.js';
 
 const $ = (id) => document.getElementById(id);
 const RECENT_KEY = 'nosk.vault.recent';
 const TOKEN_URL = 'https://github.com/settings/personal-access-tokens/new';
-const KIND_LABELS = { canvas: 'Obsidian canvas', excalidraw: 'Excalidraw drawing', base: 'Obsidian base' };
+const KIND_LABELS = { canvas: 'Obsidian canvas', base: 'Obsidian base' };
 // Characters Obsidian won't put in a file name (plus ones that break [[links]]).
 const BAD_NAME = /[*"\\<>:|?#^[\]]/;
 const TASK_LINE = /^[\s>]*(?:[-*+]|\d+[.)])\s+\[[^\]]\]/;
@@ -125,6 +133,44 @@ export function folderMoves(paths, folder, target) {
         .map((from) => ({ from, to: `${target}/${from.slice(prefix.length)}` }));
 }
 
+/**
+ * Resolve where Obsidian stores new attachments for `notePath`, reading `attachmentFolderPath`
+ * from `.obsidian/app.json` (vault-relative path, `./` = same folder, `./sub` = subfolder).
+ */
+export function attachmentFolderFor(notePath, appConfig = {}) {
+    const raw = String(appConfig?.attachmentFolderPath ?? '').trim();
+    const noteDir = parentOf(notePath || '');
+    if (!raw || raw === '/') return '';
+    if (raw === '.' || raw === './') return noteDir;
+    if (raw.startsWith('./')) {
+        const sub = raw.slice(2).replace(/^\/+|\/+$/g, '');
+        return noteDir ? (sub ? `${noteDir}/${sub}` : noteDir) : sub;
+    }
+    return raw.replace(/^\/+|\/+$/g, '');
+}
+
+/** Clean filename for a pasted/dropped image, falling back to `Pasted image YYYYMMDDHHMMSS.<ext>`. */
+export function imageFileName(file, date = new Date()) {
+    const mimeExt = {
+        'image/png': 'png',
+        'image/jpeg': 'jpg',
+        'image/gif': 'gif',
+        'image/webp': 'webp',
+        'image/avif': 'avif',
+        'image/bmp': 'bmp',
+        'image/svg+xml': 'svg',
+    };
+    const pad = (n) => String(n).padStart(2, '0');
+    const stamp = `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
+    const rawName = String(file?.name || '').trim();
+    const cleaned = rawName.replace(/[*"\\<>:|?#^[\]/]/g, '-').replace(/^\.+/, '');
+    if (cleaned && /\.[a-z0-9]+$/i.test(cleaned) && !/^image\.[a-z0-9]+$/i.test(cleaned)) {
+        return cleaned;
+    }
+    const ext = mimeExt[file?.type] || (cleaned.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase() ?? 'png');
+    return `Pasted image ${stamp}.${ext}`;
+}
+
 /** Turn what the user typed into a vault path for a note, or throw with a readable reason. */
 export function notePathFrom(input) {
     const cleaned = String(input || '')
@@ -138,7 +184,6 @@ export function notePathFrom(input) {
     if (bad) throw new Error(`"${bad}" can't be used: names can't start with "." or contain * " \\ < > : | ? # ^ [ ]`);
     return `${cleaned.join('/')}.md`;
 }
-
 /** "owner/repo", a github.com URL or an ssh remote → { owner, repo }. */
 export function parseRepo(input) {
     const value = String(input || '')
@@ -379,7 +424,10 @@ class VaultApp {
         this.sync?.stop();
         this.sync = new VaultSync({ store: this.store, github: this.github, branch });
         this.search = new VaultSearch({ allFiles: () => this.sync.files() });
-        this.sync.beforeSync = () => this.editor?.flush();
+        this.sync.beforeSync = () => {
+            this.editor?.flush();
+            this.excalidraw?.flush();
+        };
         $('vault-name').textContent = `${owner}/${repo}`;
         $('vault-name').title = `${owner}/${repo} · ${branch}`;
         if (!this.bound) this.bindUI();
@@ -438,12 +486,13 @@ class VaultApp {
             } else if (modKey(event) && event.key === '\\') {
                 event.preventDefault();
                 this.layout.toggle();
-            } else if (modKey(event) && key === 'e' && this.current?.kind === 'note') {
+            } else if (modKey(event) && key === 'e' && (this.current?.kind === 'note' || this.current?.excalidraw)) {
                 event.preventDefault();
                 this.toggleEdit();
             } else if (modKey(event) && key === 's') {
                 event.preventDefault();
                 this.editor?.flush();
+                this.excalidraw?.flush();
                 this.syncNow();
             } else if (event.altKey && key === 'n') {
                 event.preventDefault();
@@ -493,12 +542,15 @@ class VaultApp {
         await this.reloadFiles();
         const touched = new Set([...changed, ...removed, ...merged]);
         const route = parseRoute(location.hash);
-        // While editing, bring merged/remote changes into the editor instead of re-rendering.
+        // While editing a note or Excalidraw drawing, don't blow away the active canvas.
         if (this.editor && route.name === 'note' && route.path === this.editorPath) {
             if (touched.has(route.path)) {
                 const text = await this.sync.text(route.path);
                 if (text != null && !this.editor.dirty) this.editor.setValue(text);
             }
+            return;
+        }
+        if (this.excalidraw && route.name === 'note' && route.path === this.excalidrawPath) {
             return;
         }
         // Re-render what's on screen if it changed, or if the first download just finished.
@@ -626,6 +678,11 @@ class VaultApp {
             this.editor.flush();
             this.editor = null;
             this.editorPath = null;
+        }
+        if (this.excalidraw) {
+            this.excalidraw.unmount();
+            this.excalidraw = null;
+            this.excalidrawPath = null;
         }
         document.title = title ? `${title} · nosk` : 'nosk';
         const view = $('view');
@@ -899,9 +956,12 @@ class VaultApp {
         const [file, edit] = await Promise.all([this.store.getFile(path), this.store.getPending(path)]);
         const exists = edit ? edit.text !== null : Boolean(file);
         const kind = file?.kind || edit?.kind || kindOf(path);
-        const editing = kind === 'note' && exists && this.editNext === path;
+        const isDrawingPath = isExcalidrawPath(path);
+        const editing = (kind === 'note' || isDrawingPath) && exists && this.editNext === path;
+        const showSource = exists && this.sourceNext === path;
         this.editNext = null;
-        this.current = { path, sha: file?.sha ?? null, kind, exists };
+        this.sourceNext = null;
+        this.current = { path, sha: file?.sha ?? null, kind, exists, excalidraw: isDrawingPath };
         this.tree.setActive(path);
         const { view, seq } = this.beginView(displayName(path));
         this.setCrumbs(path);
@@ -926,24 +986,37 @@ class VaultApp {
             return;
         }
         pushRecent(path);
-        const actions = this.fileActions(path, kind, editing, Boolean(edit));
-        if (kind === 'note') {
+
+        if (kind === 'note' || isDrawingPath) {
             const text = await this.sync.text(path).catch(() => null);
             if (seq !== this.renderSeq) return;
+            const isDrawing = isDrawingPath || (text != null && isExcalidrawFile(path, text));
+            this.current.excalidraw = isDrawing;
+            const actions = this.fileActions(path, kind, editing, Boolean(edit), { excalidraw: isDrawing, showSource });
             if (text == null) {
                 header.append(actions);
                 article.append(
                     el(
                         'div',
                         { className: 'notice' },
-                        "This note hasn't been downloaded yet. It will load when you're online.",
+                        "This file hasn't been downloaded yet. It will load when you're online.",
                     ),
                 );
+                return;
+            }
+            if (isDrawing && !showSource) {
+                header.append(actions);
+                await this.showExcalidraw(article, path, text, { editing, seq });
                 return;
             }
             if (editing) {
                 header.append(actions);
                 this.openEditor(article, path, text);
+                return;
+            }
+            if (showSource && isDrawing) {
+                header.append(actions);
+                article.append(el('pre', { className: 'file-source' }, el('code', {}, text)));
                 return;
             }
             const { html, data } = renderNote(text, { path, links: this.links });
@@ -970,7 +1043,13 @@ class VaultApp {
                 body.append(el('p', { className: 'muted' }, 'Empty note. Press edit (or Ctrl/⌘+E) to write.'));
             // Double-click (or double-tap) the text to start editing.
             body.addEventListener('dblclick', (event) => {
-                if (!event.target.closest('a, input, summary, img')) this.toggleEdit();
+                if (!event.target.closest('a, input, summary, img, .excalidraw-embed')) this.toggleEdit();
+            });
+            // Click any rendered image to inspect it in a lightbox.
+            body.addEventListener('click', (event) => {
+                const img = event.target.closest('img');
+                if (!img || img.classList.contains('is-missing') || img.closest('a')) return;
+                this.openImageLightbox(img);
             });
             article.append(body);
             await hydrate(body, { path, links: this.links, sync: this.sync });
@@ -981,8 +1060,9 @@ class VaultApp {
             return;
         }
 
+        const actions = this.fileActions(path, kind, editing, Boolean(edit));
         header.append(actions);
-        if (file && (kind === 'image' || kind === 'pdf')) {
+        if ((file || edit?.blobSha) && (kind === 'image' || kind === 'pdf')) {
             const holder = el(
                 'div',
                 { className: `file-view file-view--${kind}` },
@@ -992,24 +1072,31 @@ class VaultApp {
             try {
                 const url = await this.sync.blobUrl(path);
                 if (seq !== this.renderSeq) return;
-                holder.replaceChildren(
-                    kind === 'image'
-                        ? el('img', { src: url, alt: displayName(path) })
-                        : el('iframe', { src: url, title: displayName(path) }),
+                const isSvg = mimeOf(path) === 'image/svg+xml';
+                const imgEl = kind === 'image' ? el('img', { src: url, alt: displayName(path) }) : null;
+                if (imgEl) {
+                    imgEl.addEventListener('click', () => this.openImageLightbox(imgEl, path));
+                }
+                const viewActions = el(
+                    'div',
+                    { className: 'file-view__actions' },
                     el(
-                        'div',
-                        { className: 'file-view__actions' },
-                        el(
-                            'a',
-                            { className: 'btn btn-ghost btn-sm', href: url, download: path.split('/').pop() },
-                            'download',
-                        ),
-                        el(
-                            'a',
-                            { className: 'btn btn-ghost btn-sm', href: url, target: '_blank', rel: 'noopener' },
-                            'open',
-                        ),
+                        'a',
+                        { className: 'btn btn-ghost btn-sm', href: url, download: path.split('/').pop() },
+                        'download',
                     ),
+                    // Do not open raw SVG blobs in a top-level tab (inline <script> in SVG executes there).
+                    !isSvg
+                        ? el(
+                              'a',
+                              { className: 'btn btn-ghost btn-sm', href: url, target: '_blank', rel: 'noopener' },
+                              'open',
+                          )
+                        : null,
+                );
+                holder.replaceChildren(
+                    kind === 'image' ? imgEl : el('iframe', { src: url, title: displayName(path) }),
+                    viewActions,
                 );
             } catch {
                 holder.replaceChildren(
@@ -1043,10 +1130,137 @@ class VaultApp {
         );
     }
 
+    /** Render an Excalidraw file in either fast SVG preview mode or full interactive editor mode. */
+    async showExcalidraw(article, path, text, { editing, seq }) {
+        article.classList.add('note--wide');
+        if (editing) {
+            const stage = el(
+                'div',
+                { className: 'excalidraw-editor' },
+                el('div', { className: 'excalidraw-loading muted' }, 'loading Excalidraw editor…'),
+            );
+            article.append(stage);
+            try {
+                const handle = await mountExcalidrawEditor(stage, {
+                    text,
+                    path,
+                    links: this.links,
+                    sync: this.sync,
+                    viewMode: false,
+                    theme: currentExcalidrawTheme(),
+                    onSave: (next) => this.sync.saveLocal(path, next),
+                });
+                if (seq !== this.renderSeq) {
+                    handle.unmount();
+                    return;
+                }
+                this.excalidraw = handle;
+                this.excalidrawPath = path;
+            } catch (error) {
+                if (seq !== this.renderSeq) return;
+                stage.replaceChildren(
+                    el('div', { className: 'notice' }, `Couldn't open Excalidraw editor: ${error.message}`),
+                );
+            }
+            return;
+        }
+
+        const holder = el(
+            'div',
+            { className: 'file-view file-view--excalidraw' },
+            el('div', { className: 'excalidraw-loading muted' }, 'rendering Excalidraw diagram…'),
+        );
+        article.append(holder);
+        try {
+            const { svg } = await renderExcalidrawSvg(text, {
+                path,
+                links: this.links,
+                sync: this.sync,
+                theme: currentExcalidrawTheme(),
+            });
+            if (seq !== this.renderSeq) return;
+            const canvas = el('div', { className: 'excalidraw-preview' }, svg);
+            const exportBtn = el('button', { type: 'button', className: 'btn btn-ghost btn-sm' }, 'download svg');
+            exportBtn.addEventListener('click', () => {
+                const data = new XMLSerializer().serializeToString(svg);
+                const blob = new Blob([data], { type: 'image/svg+xml' });
+                const url = URL.createObjectURL(blob);
+                const a = el('a', {
+                    href: url,
+                    download: `${displayName(path).replace(/\.excalidraw$/i, '')}.svg`,
+                });
+                a.click();
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+            });
+            const rawBtn = el('button', { type: 'button', className: 'btn btn-ghost btn-sm' }, 'raw source');
+            rawBtn.addEventListener('click', () => {
+                this.sourceNext = path;
+                this.route();
+            });
+            holder.replaceChildren(canvas, el('div', { className: 'file-view__actions' }, exportBtn, rawBtn));
+            this.showBacklinks(article, path, seq);
+        } catch (error) {
+            if (seq !== this.renderSeq) return;
+            holder.replaceChildren(
+                el('div', { className: 'notice' }, `Couldn't render Excalidraw diagram: ${error.message}`),
+                el('pre', { className: 'file-source' }, el('code', {}, text)),
+            );
+        }
+    }
+
+    /** Full-screen modal lightbox for inspecting any vault or external image. */
+    openImageLightbox(img, vaultPath = img.dataset.vaultSrc || null) {
+        const src = img.currentSrc || img.src;
+        if (!src) return;
+        const title = vaultPath ? displayName(vaultPath) : img.alt || 'Image';
+        modal(
+            title,
+            (body, close) => {
+                const preview = el('img', { className: 'lightbox__img', src, alt: img.alt || title });
+                const meta = el('div', { className: 'lightbox__meta muted' });
+                const updateMeta = () => {
+                    const dims =
+                        preview.naturalWidth && preview.naturalHeight
+                            ? `${preview.naturalWidth} × ${preview.naturalHeight}`
+                            : '';
+                    meta.textContent = [vaultPath, dims].filter(Boolean).join(' · ');
+                };
+                preview.addEventListener('load', updateMeta);
+                updateMeta();
+                const actions = el(
+                    'div',
+                    { className: 'file-view__actions' },
+                    el(
+                        'a',
+                        {
+                            className: 'btn btn-ghost btn-sm',
+                            href: src,
+                            download: vaultPath ? vaultPath.split('/').pop() : 'image',
+                        },
+                        'download',
+                    ),
+                    vaultPath
+                        ? el(
+                              'a',
+                              {
+                                  className: 'btn btn-ghost btn-sm',
+                                  href: noteHref(vaultPath),
+                                  onclick: () => close(),
+                              },
+                              'open file',
+                          )
+                        : null,
+                );
+                body.append(el('div', { className: 'lightbox' }, preview, meta, actions));
+            },
+            { wide: true },
+        );
+    }
+
     /** The row under a file's title: edit/done, unsynced marker and the ⋯ menu. */
-    fileActions(path, kind, editing, dirty) {
+    fileActions(path, kind, editing, dirty, { excalidraw = false, showSource = false } = {}) {
         const row = el('div', { className: 'page-meta page-actions' });
-        if (kind === 'note') {
+        if (kind === 'note' || excalidraw) {
             row.append(
                 el(
                     'button',
@@ -1056,7 +1270,20 @@ class VaultApp {
                         title: 'Ctrl/⌘+E',
                         onclick: () => this.toggleEdit(),
                     },
-                    editing ? 'done' : 'edit',
+                    editing ? 'done' : excalidraw ? 'edit drawing' : 'edit',
+                ),
+            );
+        }
+        if (excalidraw && showSource) {
+            row.append(
+                el(
+                    'button',
+                    {
+                        type: 'button',
+                        className: 'btn btn-ghost btn-sm',
+                        onclick: () => this.route(),
+                    },
+                    'diagram',
                 ),
             );
         }
@@ -1109,6 +1336,7 @@ class VaultApp {
     folderMenu(folder) {
         return [
             { label: 'New note here', icon: '+', onSelect: () => this.newNote(`${folder}/`) },
+            { label: 'New drawing here', icon: '✎', onSelect: () => this.newDrawing(`${folder}/`) },
             { label: 'Rename', icon: '✎', onSelect: () => this.renameFolder(folder) },
             { label: 'Move to…', icon: '→', onSelect: () => this.moveTo({ folder }) },
         ];
@@ -1120,6 +1348,7 @@ class VaultApp {
             onChange: (value) => this.sync.saveLocal(path, value),
             suggest: (query) => this.linkSuggestions(query, path),
             onSave: () => this.syncNow(),
+            onUploadImages: (files) => this.uploadImagesForNote(path, files),
         });
         this.editor = editor;
         this.editorPath = path;
@@ -1128,11 +1357,89 @@ class VaultApp {
         this.focusEnd = false;
     }
 
+    async attachmentFolder(notePath) {
+        let config = {};
+        try {
+            config = JSON.parse((await this.sync.text('.obsidian/app.json')) || '{}');
+        } catch {
+            config = {};
+        }
+        return attachmentFolderFor(notePath, config);
+    }
+
+    freeBinaryPath(path) {
+        if (!this.exists(path)) return path;
+        const dot = path.lastIndexOf('.');
+        const stem = dot > 0 ? path.slice(0, dot) : path;
+        const ext = dot > 0 ? path.slice(dot) : '';
+        for (let n = 1; ; n += 1) if (!this.exists(`${stem} ${n}${ext}`)) return `${stem} ${n}${ext}`;
+    }
+
+    async uploadImagesForNote(notePath, files) {
+        const folder = await this.attachmentFolder(notePath);
+        const snippets = [];
+        for (const file of files) {
+            try {
+                const name = imageFileName(file);
+                const rawPath = folder ? `${folder}/${name}` : name;
+                const path = this.freeBinaryPath(rawPath);
+                const buffer = await file.arrayBuffer();
+                await this.sync.saveBlobLocal(path, buffer);
+                await this.reloadFiles();
+                const base = path.split('/').pop();
+                const unique = this.links.resolveWikilink(base, notePath) === path;
+                snippets.push(`![[${unique ? base : path}]]`);
+            } catch (error) {
+                toast(`Couldn't add image "${file.name || 'image'}": ${error.message}`, { type: 'error' });
+            }
+        }
+        if (snippets.length) {
+            toast(`Added ${snippets.length} image${snippets.length === 1 ? '' : 's'} (will sync on next push).`, {
+                type: 'success',
+            });
+        }
+        return snippets;
+    }
+
+    async newDrawing(inFolder = null) {
+        const route = parseRoute(location.hash);
+        const folder =
+            typeof inFolder === 'string'
+                ? inFolder
+                : route.name === 'folder'
+                  ? `${route.path}/`
+                  : this.current?.path?.includes('/')
+                    ? this.current.path.slice(0, this.current.path.lastIndexOf('/') + 1)
+                    : '';
+        const input = await promptDialog('New Excalidraw drawing', {
+            label: 'name (saved as .excalidraw.md)',
+            value: `${folder}Drawing`,
+            placeholder: 'Folder/Diagram',
+            confirmLabel: 'Create',
+        });
+        if (input === null) return;
+        let path;
+        try {
+            const cleaned = notePathFrom(input.replace(/\.excalidraw(?:\.md)?$/i, ''));
+            path = this.freePath(cleaned.replace(/\.md$/i, '.excalidraw.md'));
+        } catch (error) {
+            toast(error.message, { type: 'error' });
+            return;
+        }
+        await this.sync.saveLocal(path, newExcalidrawMarkdownTemplate());
+        await this.reloadFiles();
+        this.editNext = path;
+        location.hash = noteHref(path);
+    }
+
     toggleEdit() {
         const path = this.current?.path;
-        if (!path || this.current.kind !== 'note') return;
+        if (!path || (this.current.kind !== 'note' && !this.current.excalidraw)) return;
         if (this.editor && this.editorPath === path) {
             this.editor.flush();
+            this.route({ keepScroll: false });
+        } else if (this.excalidraw && this.excalidrawPath === path) {
+            this.excalidraw.flush();
             this.route({ keepScroll: false });
         } else {
             this.editNext = path;
@@ -1400,6 +1707,11 @@ class VaultApp {
             this.editor = null;
             this.editorPath = null;
         }
+        if (this.excalidrawPath === path) {
+            this.excalidraw.unmount();
+            this.excalidraw = null;
+            this.excalidrawPath = null;
+        }
         await this.sync.deleteLocal(path);
         await this.reloadFiles();
         location.hash = '#/';
@@ -1567,8 +1879,8 @@ class VaultApp {
                 button.addEventListener('click', () => {
                     theme.set(value);
                     themeButtons.forEach((b) => b.classList.toggle('is-active', b === button));
+                    this.excalidraw?.setTheme(currentExcalidrawTheme());
                 });
-                return button;
             });
             const paletteButtons = PALETTES.map(({ id, label, swatch }) => {
                 const button = el(

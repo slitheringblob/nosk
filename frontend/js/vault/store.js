@@ -85,9 +85,11 @@ export class VaultStore {
         return this.tx('blobs', 'readwrite', (blobs) => blobs.put(row));
     }
 
-    /** Drop downloaded binaries that no file points at any more. */
+    /** Drop downloaded binaries that no synced file or pending edit points at any more. */
     async pruneBlobs() {
-        const live = new Set((await this.allFiles()).map((f) => f.sha));
+        const [files, pending] = await Promise.all([this.allFiles(), this.allPending()]);
+        const live = new Set(files.map((f) => f.sha));
+        for (const edit of pending) if (edit.blobSha) live.add(edit.blobSha);
         const keys = await this.tx('blobs', 'readonly', (blobs) => blobs.getAllKeys());
         const dead = keys.filter((sha) => !live.has(sha));
         if (dead.length) await this.tx('blobs', 'readwrite', (blobs) => dead.forEach((sha) => blobs.delete(sha)));

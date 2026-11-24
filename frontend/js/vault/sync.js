@@ -387,7 +387,24 @@ export class VaultSync extends Emitter {
         }).then(() => this.afterLocal([...moves.flatMap((m) => [m.from, m.to]), ...rewrites.map((r) => r.path)]));
     }
 
-    /** A binary file at `path` with the contents of blob `sha` (a moved image or pdf). */
+    /** Save a new or replaced binary file (e.g. uploaded/pasted image) locally; pushed on the next commit. */
+    saveBlobLocal(path, buffer, kind = kindOf(path)) {
+        const bytes =
+            buffer instanceof ArrayBuffer
+                ? buffer.slice(0)
+                : ArrayBuffer.isView(buffer)
+                  ? buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength)
+                  : new ArrayBuffer(0);
+        return this.exclusive(async () => {
+            const sha = await gitBlobSha(bytes);
+            const type = mimeOf(path);
+            await this.store.putBlob({ sha, buffer: bytes, type });
+            await this.writeBlobLocal(path, sha, kind);
+            return { path, sha, size: bytes.byteLength, type };
+        }).then((info) => this.afterLocal([path]).then(() => info));
+    }
+
+    /** A binary file at `path` with the contents of blob `sha` (a moved or uploaded image/pdf). */
     async writeBlobLocal(path, sha, kind) {
         const [file, edit] = await Promise.all([this.store.getFile(path), this.store.getPending(path)]);
         const baseSha = edit ? edit.baseSha : (file?.sha ?? null);
@@ -558,6 +575,16 @@ export class VaultSync extends Emitter {
         const url = URL.createObjectURL(new Blob([buffer], { type: mimeOf(path) }));
         this.urls.set(sha, url);
         return url;
+    }
+
+    /** Base64 data URL for a binary file (used by Excalidraw embedded images). */
+    async blobDataUrl(path) {
+        const edit = await this.store.getPending(path);
+        const sha = edit ? (edit.blobSha ?? null) : (await this.store.getFile(path))?.sha;
+        if (!sha) return null;
+        const buffer = await this.blobBuffer(sha, path);
+        const mimeType = mimeOf(path);
+        return { dataURL: `data:${mimeType};base64,${bufferToBase64(buffer)}`, mimeType, sha };
     }
 
     // ------------------------------------------------------------ scheduling

@@ -102,9 +102,16 @@ export function merge3(base, ours, theirs) {
     return { text: out.join('\n'), conflicts };
 }
 
-/** The sha git gives a file with this content ("blob <bytes>\0<content>", SHA-1). */
-export async function gitBlobSha(text) {
-    const body = new TextEncoder().encode(text);
+/** The sha git gives a file with this content ("blob <bytes>\0<content>", SHA-1). Accepts text or binary. */
+export async function gitBlobSha(content) {
+    const body =
+        content instanceof Uint8Array
+            ? content
+            : content instanceof ArrayBuffer
+              ? new Uint8Array(content)
+              : ArrayBuffer.isView(content)
+                ? new Uint8Array(content.buffer, content.byteOffset, content.byteLength)
+                : new TextEncoder().encode(String(content ?? ''));
     const header = new TextEncoder().encode(`blob ${body.length}\0`);
     const bytes = new Uint8Array(header.length + body.length);
     bytes.set(header);

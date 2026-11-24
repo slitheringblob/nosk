@@ -4,9 +4,9 @@
 // the vault (images, embedded notes, math, syntax highlighting).
 import { highlightCode, renderMath } from '../markdown.js';
 import { escapeHTML } from '../utils.js';
+import { isExcalidrawFile, isExcalidrawPath, renderExcalidrawSvg } from './excalidraw.js';
 import { displayName, parseLinkTarget } from './links.js';
 import { kindOf } from './sync.js';
-
 /** Hash route of a vault file, optionally scrolled to a heading or block. */
 export function noteHref(path, fragment) {
     return `#/n/${encodeURIComponent(path)}${fragment ? `?h=${encodeURIComponent(fragment)}` : ''}`;
@@ -90,10 +90,38 @@ function safeDecode(value) {
 
 const isExternal = (href) => /^[a-z][a-z0-9+.-]*:/i.test(href || '');
 
-function sizeAttrs(alias) {
-    const size = (alias || '').match(/^(\d+)(?:x(\d+))?$/);
-    if (!size) return '';
-    return ` width="${size[1]}"${size[2] ? ` height="${size[2]}"` : ''}`;
+/**
+ * Parse Obsidian image alias/alt text for optional trailing `|width` or `|widthxheight`:
+ *   "200"           → { alt: '', width: '200', height: null }
+ *   "200x100"       → { alt: '', width: '200', height: '100' }
+ *   "caption|200"   → { alt: 'caption', width: '200', height: null }
+ *   "caption"       → { alt: 'caption', width: null, height: null }
+ */
+export function parseImageAlias(raw) {
+    const value = String(raw || '').trim();
+    if (!value) return { alt: '', width: null, height: null };
+    const parts = value.split('|').map((p) => p.trim());
+    const last = parts[parts.length - 1];
+    const size = last.match(/^(\d+)(?:x(\d+))?$/);
+    if (size) {
+        return {
+            alt: parts.slice(0, -1).join(' | '),
+            width: size[1],
+            height: size[2] || null,
+        };
+    }
+    return { alt: value, width: null, height: null };
+}
+
+function sizeAttrs(width, height) {
+    if (!width) return '';
+    return ` width="${width}"${height ? ` height="${height}"` : ''}`;
+}
+
+function excalidrawEmbedHTML(resolved, alias) {
+    const { width, height } = parseImageAlias(alias);
+    const dims = `${width ? ` data-width="${width}"` : ''}${height ? ` data-height="${height}"` : ''}`;
+    return `<div class="excalidraw-embed" data-excalidraw="${escapeHTML(resolved)}"${dims}></div>`;
 }
 
 function wikilinkHTML({ embed, raw }) {
@@ -105,8 +133,12 @@ function wikilinkHTML({ embed, raw }) {
     }
     const kind = kindOf(resolved);
     const path = escapeHTML(resolved);
+    if (embed && isExcalidrawPath(resolved)) {
+        return excalidrawEmbedHTML(resolved, alias);
+    }
     if (embed && kind === 'image') {
-        return `<img class="vault-img" data-vault-src="${path}" alt="${escapeHTML(alias && !sizeAttrs(alias) ? alias : displayName(resolved))}"${sizeAttrs(alias)}>`;
+        const { alt, width, height } = parseImageAlias(alias);
+        return `<img class="vault-img" data-vault-src="${path}" alt="${escapeHTML(alt || displayName(resolved))}"${sizeAttrs(width, height)}>`;
     }
     if (embed && kind === 'note') {
         return `<div class="note-embed" data-embed="${path}" data-fragment="${escapeHTML(fragment || '')}"></div>`;
@@ -231,7 +263,9 @@ const renderer = {
         if (isExternal(href) || !href) return false;
         const resolved = context.links?.resolveHref(href, context.path);
         if (!resolved) return `<span class="wikilink is-unresolved">⧉ ${escapeHTML(text || href)}</span>`;
-        return `<img class="vault-img" data-vault-src="${escapeHTML(resolved)}" alt="${escapeHTML(text)}"${title ? ` title="${escapeHTML(title)}"` : ''}>`;
+        if (isExcalidrawPath(resolved)) return excalidrawEmbedHTML(resolved, text);
+        const { alt, width, height } = parseImageAlias(text);
+        return `<img class="vault-img" data-vault-src="${escapeHTML(resolved)}" alt="${escapeHTML(alt)}"${title ? ` title="${escapeHTML(title)}"` : ''}${sizeAttrs(width, height)}>`;
     },
 };
 
@@ -259,6 +293,21 @@ function sanitize(html) {
         if (/^https?:/i.test(link.getAttribute('href'))) {
             link.target = '_blank';
             link.rel = 'noopener noreferrer';
+        }
+    });
+    // Rewrite raw HTML <img src="relative/path.png"> into vault-src placeholders so the browser
+    // doesn't fire a 404 against the app origin before hydrate() resolves the vault blob.
+    fragment.querySelectorAll('img[src]:not([data-vault-src])').forEach((img) => {
+        const src = img.getAttribute('src');
+        if (!src || isExternal(src) || src.startsWith('//')) return;
+        const resolved = context.links?.resolveHref(src, context.path);
+        img.removeAttribute('src');
+        if (resolved) {
+            img.classList.add('vault-img');
+            img.dataset.vaultSrc = resolved;
+        } else {
+            img.classList.add('vault-img', 'is-missing');
+            img.alt = `${img.alt || src} (not in this vault)`;
         }
     });
     const container = document.createElement('div');
@@ -409,8 +458,8 @@ function decorateCode(root) {
     });
 }
 
-/** Fill in images, embeds, math and code highlighting for rendered note HTML inside `root`. */
-export async function hydrate(root, { path, links, sync, depth = 0 } = {}) {
+/** Fill in images, embeds, Excalidraw drawings, math and code highlighting for rendered note HTML inside `root`. */
+export async function hydrate(root, { path, links, sync, depth = 0, excalidrawRuntime = null } = {}) {
     upgradeCallouts(root);
     upgradeTasks(root);
     decorateCode(root);
@@ -421,6 +470,47 @@ export async function hydrate(root, { path, links, sync, depth = 0 } = {}) {
         heading.dataset.heading = heading.textContent.trim().toLowerCase();
     });
     const jobs = [];
+
+    const hydrateExcalidrawBox = (box, target) => {
+        const label = displayName(target).replace(/\.excalidraw$/i, '');
+        const header = Object.assign(document.createElement('a'), {
+            className: 'excalidraw-embed__title',
+            href: noteHref(target),
+            textContent: `✎ ${label}`,
+        });
+        const stage = Object.assign(document.createElement('div'), {
+            className: 'excalidraw-embed__stage',
+            textContent: 'rendering diagram…',
+        });
+        if (box.dataset.width) stage.style.maxWidth = `${box.dataset.width}px`;
+        if (box.dataset.height) stage.style.maxHeight = `${box.dataset.height}px`;
+        box.replaceChildren(header, stage);
+        if (depth >= 2 || target === path) {
+            stage.textContent = '';
+            return;
+        }
+        jobs.push(
+            (async () => {
+                const text = await sync?.text(target);
+                if (text == null) {
+                    stage.classList.add('is-missing');
+                    stage.textContent = "Drawing hasn't been downloaded yet. It will load when you're online.";
+                    return;
+                }
+                const { svg } = await renderExcalidrawSvg(text, {
+                    path: target,
+                    links,
+                    sync,
+                    runtime: excalidrawRuntime,
+                });
+                stage.replaceChildren(svg);
+            })().catch((error) => {
+                stage.classList.add('is-missing');
+                stage.textContent = `Couldn't render Excalidraw drawing (${error?.message || 'error'}).`;
+            }),
+        );
+    };
+
     root.querySelectorAll('img[data-vault-src]').forEach((img) => {
         jobs.push(
             (sync ? sync.blobUrl(img.dataset.vaultSrc) : Promise.resolve(null))
@@ -434,6 +524,11 @@ export async function hydrate(root, { path, links, sync, depth = 0 } = {}) {
                 }),
         );
     });
+
+    root.querySelectorAll('.excalidraw-embed[data-excalidraw]').forEach((box) => {
+        hydrateExcalidrawBox(box, box.dataset.excalidraw);
+    });
+
     root.querySelectorAll('.note-embed[data-embed]').forEach((box) => {
         const target = box.dataset.embed;
         const header = Object.assign(document.createElement('a'), {
@@ -447,13 +542,21 @@ export async function hydrate(root, { path, links, sync, depth = 0 } = {}) {
             (async () => {
                 const text = await sync?.text(target);
                 if (text == null) return;
+                // Notes with `excalidraw-plugin: parsed` frontmatter (even without `.excalidraw.md` suffix)
+                // render as diagrams instead of dumping raw compressed JSON.
+                if (isExcalidrawFile(target, text)) {
+                    box.className = 'excalidraw-embed';
+                    box.dataset.excalidraw = target;
+                    hydrateExcalidrawBox(box, target);
+                    return;
+                }
                 const { body } = splitFrontmatter(text);
                 const section = sectionOf(body, box.dataset.fragment);
                 const content = document.createElement('div');
                 content.className = 'note-embed__body rendered';
                 content.innerHTML = renderNote(section, { path: target, links }).html;
                 box.append(content);
-                await hydrate(content, { path: target, links, sync, depth: depth + 1 });
+                await hydrate(content, { path: target, links, sync, depth: depth + 1, excalidrawRuntime });
             })().catch(() => {}),
         );
     });

@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' blob: data: https:; connect-src 'self' https://api.github.com; frame-src blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' blob: data: https:; connect-src 'self' blob: data: https://api.github.com; frame-src blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
     <meta name="referrer" content="no-referrer">
     <title>nosk</title>
     <meta name="description" content="Your Obsidian vault on every device, straight from GitHub.">
@@ -26,6 +26,7 @@
     <script src="lib/marked.min.js" defer></script>
     <script src="lib/highlight.min.js" defer></script>
     <script src="lib/katex/katex.min.js" defer></script>
+    <script src="lib/lz-string.min.js" defer></script>
     <script type="module" src="js/vault/app.js"></script>
 </head>
 <body>
