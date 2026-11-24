@@ -13,7 +13,6 @@ import {
     isExcalidrawPath,
     mountExcalidrawEditor,
     newExcalidrawMarkdownTemplate,
-    renderExcalidrawSvg,
 } from './excalidraw.js';
 import { GitHub, GitHubError, OfflineError } from './github.js';
 import { LinkIndex, displayName, outgoingLinks, parseLinkTarget } from './links.js';
@@ -550,7 +549,12 @@ class VaultApp {
             }
             return;
         }
-        if (this.excalidraw && route.name === 'note' && route.path === this.excalidrawPath) {
+        if (
+            this.excalidraw &&
+            !this.excalidraw.viewMode &&
+            route.name === 'note' &&
+            route.path === this.excalidrawPath
+        ) {
             return;
         }
         // Re-render what's on screen if it changed, or if the first download just finished.
@@ -686,6 +690,7 @@ class VaultApp {
         }
         document.title = title ? `${title} · nosk` : 'nosk';
         const view = $('view');
+        view.classList.remove('view--excalidraw');
         view.replaceChildren();
         window.scrollTo(0, 0);
         return { view, seq: this.renderSeq };
@@ -1005,8 +1010,7 @@ class VaultApp {
                 return;
             }
             if (isDrawing && !showSource) {
-                header.append(actions);
-                await this.showExcalidraw(article, path, text, { editing, seq });
+                await this.showExcalidraw(view, article, header, actions, path, text, { editing, seq });
                 return;
             }
             if (editing) {
@@ -1045,11 +1049,18 @@ class VaultApp {
             body.addEventListener('dblclick', (event) => {
                 if (!event.target.closest('a, input, summary, img, .excalidraw-embed')) this.toggleEdit();
             });
-            // Click any rendered image to inspect it in a lightbox.
+            // Click any rendered image to inspect it in a lightbox; click an Excalidraw embed stage to open full canvas.
             body.addEventListener('click', (event) => {
                 const img = event.target.closest('img');
-                if (!img || img.classList.contains('is-missing') || img.closest('a')) return;
-                this.openImageLightbox(img);
+                if (img && !img.classList.contains('is-missing') && !img.closest('a')) {
+                    this.openImageLightbox(img);
+                    return;
+                }
+                const embed = event.target.closest('.excalidraw-embed__stage');
+                if (embed && !embed.classList.contains('is-missing')) {
+                    const target = embed.closest('.excalidraw-embed')?.dataset.excalidraw;
+                    if (target) location.hash = noteHref(target);
+                }
             });
             article.append(body);
             await hydrate(body, { path, links: this.links, sync: this.sync });
@@ -1130,59 +1141,30 @@ class VaultApp {
         );
     }
 
-    /** Render an Excalidraw file in either fast SVG preview mode or full interactive editor mode. */
-    async showExcalidraw(article, path, text, { editing, seq }) {
-        article.classList.add('note--wide');
-        if (editing) {
-            const stage = el(
-                'div',
-                { className: 'excalidraw-editor' },
-                el('div', { className: 'excalidraw-loading muted' }, 'loading Excalidraw editor…'),
-            );
-            article.append(stage);
-            try {
-                const handle = await mountExcalidrawEditor(stage, {
-                    text,
-                    path,
-                    links: this.links,
-                    sync: this.sync,
-                    viewMode: false,
-                    theme: currentExcalidrawTheme(),
-                    onSave: (next) => this.sync.saveLocal(path, next),
-                });
-                if (seq !== this.renderSeq) {
-                    handle.unmount();
-                    return;
-                }
-                this.excalidraw = handle;
-                this.excalidrawPath = path;
-            } catch (error) {
-                if (seq !== this.renderSeq) return;
-                stage.replaceChildren(
-                    el('div', { className: 'notice' }, `Couldn't open Excalidraw editor: ${error.message}`),
-                );
-            }
-            return;
-        }
+    /**
+     * Render an Excalidraw drawing as a full-viewport interactive canvas (pan + wheel/pinch zoom).
+     * Starts in view mode by default so navigating feels instant and drags pan smoothly;
+     * "edit drawing" (Ctrl/⌘+E) toggles editing in-place without losing zoom or viewport position.
+     */
+    async showExcalidraw(view, article, header, actions, path, text, { editing, seq }) {
+        view.classList.add('view--excalidraw');
+        article.classList.add('note--excalidraw');
+        header.classList.add('page-header--compact');
+        const titleEl = header.querySelector('.page-title');
+        if (titleEl) titleEl.textContent = displayName(path).replace(/\.excalidraw$/i, '');
 
-        const holder = el(
-            'div',
-            { className: 'file-view file-view--excalidraw' },
-            el('div', { className: 'excalidraw-loading muted' }, 'rendering Excalidraw diagram…'),
+        const fitBtn = el(
+            'button',
+            { type: 'button', className: 'btn btn-ghost btn-sm', title: 'Fit drawing to viewport' },
+            'fit',
         );
-        article.append(holder);
-        try {
-            const { svg } = await renderExcalidrawSvg(text, {
-                path,
-                links: this.links,
-                sync: this.sync,
-                theme: currentExcalidrawTheme(),
-            });
-            if (seq !== this.renderSeq) return;
-            const canvas = el('div', { className: 'excalidraw-preview' }, svg);
-            const exportBtn = el('button', { type: 'button', className: 'btn btn-ghost btn-sm' }, 'download svg');
-            exportBtn.addEventListener('click', () => {
-                const data = new XMLSerializer().serializeToString(svg);
+        fitBtn.addEventListener('click', () => this.excalidraw?.fitToContent());
+
+        const exportBtn = el('button', { type: 'button', className: 'btn btn-ghost btn-sm' }, 'svg');
+        exportBtn.addEventListener('click', async () => {
+            if (!this.excalidraw) return;
+            try {
+                const data = await this.excalidraw.exportSvg();
                 const blob = new Blob([data], { type: 'image/svg+xml' });
                 const url = URL.createObjectURL(blob);
                 const a = el('a', {
@@ -1191,18 +1173,51 @@ class VaultApp {
                 });
                 a.click();
                 setTimeout(() => URL.revokeObjectURL(url), 1000);
+            } catch (error) {
+                toast(`Couldn't export SVG: ${error.message}`, { type: 'error' });
+            }
+        });
+
+        const rawBtn = el('button', { type: 'button', className: 'btn btn-ghost btn-sm' }, 'raw');
+        rawBtn.addEventListener('click', () => {
+            this.sourceNext = path;
+            this.route();
+        });
+
+        const moreBtn = actions.querySelector('.icon-btn');
+        actions.insertBefore(fitBtn, moreBtn);
+        actions.insertBefore(exportBtn, moreBtn);
+        actions.insertBefore(rawBtn, moreBtn);
+        header.append(actions);
+
+        const stage = el(
+            'div',
+            { className: 'excalidraw-stage' },
+            el('div', { className: 'excalidraw-loading muted' }, 'loading Excalidraw…'),
+        );
+        article.append(stage);
+        try {
+            const handle = await mountExcalidrawEditor(stage, {
+                text,
+                path,
+                links: this.links,
+                sync: this.sync,
+                viewMode: !editing,
+                theme: currentExcalidrawTheme(),
+                onSave: (next) => this.sync.saveLocal(path, next),
             });
-            const rawBtn = el('button', { type: 'button', className: 'btn btn-ghost btn-sm' }, 'raw source');
-            rawBtn.addEventListener('click', () => {
-                this.sourceNext = path;
-                this.route();
-            });
-            holder.replaceChildren(canvas, el('div', { className: 'file-view__actions' }, exportBtn, rawBtn));
-            this.showBacklinks(article, path, seq);
+            if (seq !== this.renderSeq) {
+                handle.unmount();
+                return;
+            }
+            this.excalidraw = handle;
+            this.excalidrawPath = path;
         } catch (error) {
             if (seq !== this.renderSeq) return;
-            holder.replaceChildren(
-                el('div', { className: 'notice' }, `Couldn't render Excalidraw diagram: ${error.message}`),
+            view.classList.remove('view--excalidraw');
+            article.classList.remove('note--excalidraw');
+            stage.replaceChildren(
+                el('div', { className: 'notice' }, `Couldn't open Excalidraw diagram: ${error.message}`),
                 el('pre', { className: 'file-source' }, el('code', {}, text)),
             );
         }
@@ -1267,6 +1282,7 @@ class VaultApp {
                     {
                         type: 'button',
                         className: `btn btn-sm ${editing ? 'btn-primary' : 'btn-ghost'}`,
+                        dataset: { editToggle: 'true' },
                         title: 'Ctrl/⌘+E',
                         onclick: () => this.toggleEdit(),
                     },
@@ -1439,8 +1455,15 @@ class VaultApp {
             this.editor.flush();
             this.route({ keepScroll: false });
         } else if (this.excalidraw && this.excalidrawPath === path) {
-            this.excalidraw.flush();
-            this.route({ keepScroll: false });
+            // Toggle view/edit mode in-place without destroying the Excalidraw canvas or zoom level.
+            const nextEditing = this.excalidraw.viewMode;
+            this.excalidraw.setViewMode(!nextEditing);
+            const btn = document.querySelector('#view [data-edit-toggle]');
+            if (btn) {
+                btn.textContent = nextEditing ? 'done' : 'edit drawing';
+                btn.classList.toggle('btn-primary', nextEditing);
+                btn.classList.toggle('btn-ghost', !nextEditing);
+            }
         } else {
             this.editNext = path;
             this.route();

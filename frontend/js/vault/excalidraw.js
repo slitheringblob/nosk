@@ -383,6 +383,7 @@ export async function mountExcalidrawEditor(
     let currentTheme = theme;
     let isViewMode = viewMode;
     const root = createRoot(container);
+    let fitted = false;
 
     const renderComponent = () => {
         root.render(
@@ -400,6 +401,15 @@ export async function mountExcalidrawEditor(
                 viewModeEnabled: isViewMode,
                 excalidrawAPI: (instance) => {
                     api = instance;
+                    if (!fitted && instance && latestElements.length) {
+                        fitted = true;
+                        requestAnimationFrame(() => {
+                            instance.scrollToContent(instance.getSceneElements(), {
+                                fitToViewport: true,
+                                viewportZoomFactor: 0.92,
+                            });
+                        });
+                    }
                 },
                 onChange: (elements, appState, files) => {
                     latestElements = elements;
@@ -432,6 +442,9 @@ export async function mountExcalidrawEditor(
         get dirty() {
             return dirty;
         },
+        get viewMode() {
+            return isViewMode;
+        },
         flush() {
             clearTimeout(timer);
             return persist();
@@ -442,8 +455,20 @@ export async function mountExcalidrawEditor(
             else renderComponent();
         },
         setViewMode(nextViewMode) {
-            isViewMode = nextViewMode;
+            if (isViewMode === nextViewMode) return;
+            if (!nextViewMode) {
+                // Entering edit mode
+                isViewMode = false;
+            } else {
+                // Leaving edit mode — flush pending edits first
+                clearTimeout(timer);
+                persist();
+                isViewMode = true;
+            }
             renderComponent();
+        },
+        fitToContent() {
+            api?.scrollToContent(api.getSceneElements(), { fitToViewport: true, animate: true });
         },
         async exportSvg() {
             const svg = await mod.exportToSvg({

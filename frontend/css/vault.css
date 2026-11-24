@@ -289,9 +289,57 @@ a.crumb:hover { color: var(--amber); }
 .lightbox__img { max-width: 100%; max-height: 72vh; object-fit: contain; border: 1px solid var(--bdr); background: var(--surface); }
 .lightbox__meta { font-size: 11.5px; word-break: break-all; text-align: center; }
 
-/* --- Excalidraw embeds, preview & interactive editor ----------------------------------------- */
+/* --- Excalidraw embeds & full-viewport interactive canvas ------------------------------------ */
 
-.note--wide { max-width: min(1240px, 100%); }
+.view.view--excalidraw {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    height: calc(100dvh - 48px);
+    min-height: 0;
+    overflow: hidden;
+}
+.editor.note--excalidraw {
+    max-width: none;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+.page-header--compact {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 0;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--bdr);
+    background: var(--bg-elev);
+    flex: none;
+}
+.page-header--compact .page-title {
+    margin: 0;
+    font-size: 16px;
+    line-height: 1.2;
+    letter-spacing: -.02em;
+}
+.page-header--compact .page-actions { margin: 0; }
+.excalidraw-stage {
+    position: relative;
+    flex: 1;
+    width: 100%;
+    min-height: 0;
+    background: var(--surface);
+    overflow: hidden;
+}
+.excalidraw-stage .excalidraw { width: 100%; height: 100%; }
+.excalidraw-loading { padding: 32px; text-align: center; font-size: 12.5px; }
+
 .note-body .excalidraw-embed {
     margin: 0 0 1em;
     border: 1px solid var(--bdr-hi);
@@ -299,7 +347,9 @@ a.crumb:hover { color: var(--amber); }
     background: var(--surface);
 }
 .note-body .excalidraw-embed__title {
-    display: block;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     padding: 6px 12px;
     border-bottom: 1px solid var(--bdr);
     color: var(--cyan);
@@ -307,28 +357,18 @@ a.crumb:hover { color: var(--amber); }
     text-decoration: none;
     letter-spacing: .04em;
 }
+.note-body .excalidraw-embed__title::after {
+    content: "open canvas ↗";
+    color: var(--txt-3);
+    font-size: 10px;
+}
 .note-body .excalidraw-embed__stage {
     padding: 12px;
     overflow: auto;
     font-size: 12px;
     color: var(--txt-3);
+    cursor: zoom-in;
 }
-.note-body .excalidraw-embed__stage.is-missing { color: var(--txt-3); font-style: italic; }
+.note-body .excalidraw-embed__stage.is-missing { color: var(--txt-3); font-style: italic; cursor: default; }
 .excalidraw-svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
-.excalidraw-preview {
-    padding: 16px;
-    border: 1px solid var(--bdr);
-    background: var(--surface);
-    overflow: auto;
-}
-.excalidraw-editor {
-    position: relative;
-    width: 100%;
-    height: min(76vh, 820px);
-    min-height: 460px;
-    border: 1px solid var(--bdr-hi);
-    background: var(--surface);
-    overflow: hidden;
-}
-.excalidraw-loading { padding: 24px; text-align: center; font-size: 12.5px; }
 .tree-file--excalidraw .nav-page__icon { color: var(--cyan); }
